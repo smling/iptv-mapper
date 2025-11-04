@@ -12,7 +12,7 @@ permissions:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
-  JAVA_VERSION: "25"
+  JAVA_VERSION: "21"
 
 jobs:
   publish:
