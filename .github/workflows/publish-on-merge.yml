@@ -3,11 +3,11 @@ name: Build & Publish (on merge to main)
 on:
   pull_request:
     branches: [ "main" ]
-    types: [ "closed" ]   # fire when PR is closed
+    types: [ "closed" ]
 
 permissions:
   contents: read
-  packages: write         # needed to push to GHCR
+  packages: write
 
 env:
   REGISTRY: ghcr.io
@@ -16,16 +16,20 @@ env:
 
 jobs:
   publish:
-    if: github.event.pull_request.merged == true   # only when merged (not closed without merge)
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    concurrency:
-      group: publish-${{ github.ref }}
-      cancel-in-progress: false
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Ensure UNIX line endings for scripts (optional but safe)
+        run: |
+          find . -name "gradlew" -o -name "*.sh" | xargs -r sed -i 's/\r$//'
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -39,10 +43,8 @@ jobs:
           ./gradlew --no-daemon clean bootJar
           echo "Built JARs:"
           ls -1 build/libs/*.jar
-          # Your Dockerfile uses COPY build/libs/iptv-mapper-*-SNAPSHOT.jar
-          # Ensure at least one SNAPSHOT JAR exists:
+          # Dockerfile copies iptv-mapper-*-SNAPSHOT.jar. Ensure one exists:
           test -n "$(ls -1 build/libs/*-SNAPSHOT.jar 2>/dev/null)" || {
-            # if non-SNAPSHOT, rename the first jar to fit the Dockerfile glob
             j="$(ls -1 build/libs/*.jar | head -n1)"
             cp "$j" build/libs/iptv-mapper-0.0.0-SNAPSHOT.jar
           }
