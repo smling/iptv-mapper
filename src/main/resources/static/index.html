@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>EPG Grid</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Optional: <meta name="api-port" content="9090"> -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- hls.js for HLS streams -->
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
+    <style>
+        :root { --row-h: 64px; }
+        body { overflow: hidden; }
+        .epg-cell {
+          position: absolute; top: 0; bottom: 0;
+          border: 1px solid #d1d5db; border-radius: .25rem;
+          background: #f8fafc; padding: .25rem .5rem;
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+          font-size: .75rem; box-sizing: border-box;
+        }
+        .now-line { position:absolute; top:0; bottom:0; width:2px; background:#3b82f6; z-index:20; }
+        .epg-row { position: relative; height: var(--row-h); border-bottom: 1px solid #e5e7eb; box-sizing: border-box; }
+        .channel-cell {
+          position: sticky; left: 0;
+          display: flex; align-items: center; gap: .5rem;
+          width: 15rem; min-width: 15rem;
+          height: 100%;
+          background: white;
+          border-right: 1px solid #e5e7eb;
+          box-sizing: border-box;
+          padding: 0 .5rem;
+          z-index: 5;
+        }
+        .play-toggle {
+          appearance: none;
+          width: 22px; height: 22px; border-radius: 6px;
+          border: 1px solid #cbd5e1; display: grid; place-items: center;
+          cursor: pointer; background: #fff;
+        }
+        .play-toggle::before { content: "▶"; font-size: 12px; color: #334155; }
+        .play-toggle:checked { background: #e0e7ff; border-color: #6366f1; }
+        .play-toggle:checked::before { content: "■"; color: #3730a3; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased">
+<div class="flex h-screen flex-col">
+    <!-- Header -->
+    <header class="flex items-center gap-3 bg-white px-4 py-2 shadow">
+        <h1 class="text-lg md:text-xl font-semibold">📺 TV Guide</h1>
+        <div class="ml-auto flex items-center gap-2 text-sm">
+            <span class="text-slate-600">Gridspan:</span>
+            <button data-span="3"  class="px-2 py-1 rounded border">3h</button>
+            <button data-span="6"  class="px-2 py-1 rounded border">6h</button>
+            <button data-span="9"  class="px-2 py-1 rounded border bg-indigo-100">9h</button>
+            <button data-span="12" class="px-2 py-1 rounded border">12h</button>
+
+            <div class="h-4 w-px bg-slate-300 mx-2"></div>
+
+            <label class="text-slate-600">Page size</label>
+            <select id="pageSize" class="rounded border px-2 py-1">
+                <option>10</option><option>25</option><option selected>50</option><option>100</option>
+            </select>
+            <button id="prevPage" class="px-2 py-1 rounded border">‹ Prev</button>
+            <button id="nextPage" class="px-2 py-1 rounded border">Next ›</button>
+            <span id="pageInfo" class="text-slate-600"></span>
+        </div>
+    </header>
+
+    <!-- Combined scroll -->
+    <div id="scrollContainer" class="flex-1 overflow-auto bg-white relative">
+        <!-- Sticky header -->
+        <div class="sticky top-0 z-10 bg-slate-100 border-b flex">
+            <div class="w-[15rem] min-w-[15rem] border-r bg-slate-50"></div>
+            <div id="timeHeader" class="flex text-xs text-slate-700"></div>
+        </div>
+
+        <!-- Grid rows -->
+        <div id="epgGrid" class="relative">
+            <div id="nowLine" class="now-line"></div>
+        </div>
+    </div>
+
+    <div id="status" class="px-4 py-1 text-sm text-slate-600"></div>
+</div>
+
+<!-- Floating mini player -->
+<div id="playerDock" class="fixed bottom-3 right-3 z-50 hidden">
+    <div class="w-[360px] rounded-xl border border-slate-200 bg-white shadow-xl">
+        <div class="flex items-center justify-between px-3 py-2 border-b">
+            <div id="playerTitle" class="text-sm font-medium truncate">Now Playing</div>
+            <button id="closePlayer" class="text-xs px-2 py-1 rounded border hover:bg-slate-50">Close</button>
+        </div>
+        <div class="p-2">
+            <video id="dockVideo" class="w-full aspect-video bg-black rounded" controls autoplay muted playsinline crossorigin="anonymous"></video>
+            <div id="playerError" class="mt-2 text-xs text-red-600 hidden"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    /* === API base: host from current page; port from env/meta/query or default 8080 === */
+    const DEFAULT_PORT = 8080;
+    const metaPort = document.querySelector('meta[name="api-port"]')?.content;
+    const urlPort  = new URLSearchParams(location.search).get('apiPort');
+    const rawPort  = (window.ENV_API_PORT ?? metaPort ?? urlPort ?? location.port ?? DEFAULT_PORT);
+    const PORT     = String(rawPort).trim() || String(DEFAULT_PORT);
+    const HOST     = location.hostname || 'localhost';
+    const PROTO    = location.protocol || 'http:';
+    const API_BASE = `${PROTO}//${HOST}:${PORT}`;
+    const CH_API   = '/api/v1/m3u/mappings/channel';
+    const PRG_API  = (id) => `/api/v1/epg/channel/${id}/programmes?size=500&sort=startTime,asc`;
+
+    /* === Elements === */
+    const scrollContainer = document.getElementById('scrollContainer');
+    const epgGrid = document.getElementById('epgGrid');
+    const timeHeader = document.getElementById('timeHeader');
+    const nowLine = document.getElementById('nowLine');
+    const statusEl = document.getElementById('status');
+    const pageSizeEl = document.getElementById('pageSize');
+    const pageInfoEl = document.getElementById('pageInfo');
+    const prevBtn = document.getElementById('prevPage');
+    const nextBtn = document.getElementById('nextPage');
+
+    // Player
+    const playerDock = document.getElementById('playerDock');
+    const dockVideo  = document.getElementById('dockVideo');
+    const playerTitle = document.getElementById('playerTitle');
+    const playerError = document.getElementById('playerError');
+    const closePlayer = document.getElementById('closePlayer');
+
+    /* === State === */
+    const ROW_H = 64;
+    const PIXELS_PER_MIN = 3; // 180px/hour
+    let hoursSpan = 9;
+    let page = 0;
+    let size = Number(localStorage.getItem('epgPageSize')) || 50;
+    pageSizeEl.value = String(size);
+    let totalPages = 1, totalElements = 0;
+    let gridStart, gridEnd;
+
+    // Playback
+    let hls = null;
+    let selectedKey = null; // channelId of the currently checked item
+
+    /* === Helpers === */
+    const safe = (v) => v == null ? '' : String(v);
+    const fmtTime = (t) => new Date(t).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
+    const alignHourUTC = (d) => { const x = new Date(d); x.setUTCMinutes(0,0,0); return x; };
+    const totalWidthPx = () => (hoursSpan * 60 * PIXELS_PER_MIN);
+    function setStatus(msg){ statusEl.textContent = msg; }
+    function setPageInfo(){ pageInfoEl.textContent = `Page ${page+1} / ${Math.max(1,totalPages)} • ${totalElements.toLocaleString()} rows`; }
+    const isHls = (u) => /\.m3u8(\?.*)?$/i.test(u) || (u && u.includes('m3u8'));
+
+    /* === Time Header === */
+    function renderTimeHeader(){
+      const hourWidth = 60 * PIXELS_PER_MIN;
+      const cols = [];
+      const cursor = new Date(gridStart);
+      while (cursor < gridEnd) {
+        const label = cursor.toLocaleTimeString([], { hour:'numeric' });
+        cols.push(`<div class="flex-none text-center border-l w-[${hourWidth}px] py-1 bg-slate-50">${label}</div>`);
+        cursor.setHours(cursor.getHours()+1);
+      }
+      timeHeader.style.width = totalWidthPx() + 'px';
+      timeHeader.innerHTML = cols.join('');
+    }
+
+    /* === Channels === */
+    async function loadChannelsPage(){
+      setStatus('⏳ Loading channels…');
+      const res = await fetch(`${API_BASE}${CH_API}?page=${page}&size=${size}&sort=displayName,asc`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      totalPages    = data.totalPages ?? 1;
+      totalElements = data.totalElements ?? (data.content?.length || 0);
+      setPageInfo();
+      return data.content || [];
+    }
+
+    function renderProgrammeRow(container, channel, programmes){
+      const startTs = gridStart.getTime();
+      const endTs   = gridEnd.getTime();
+
+      const row = document.createElement('div');
+      row.className = 'epg-row flex';
+      row.dataset.channelId = channel.channelId || '';
+      row.dataset.url = channel.url || '';
+      row.dataset.name = channel.displayName || channel.title || 'Unknown';
+
+      // Channel cell with play checkbox
+      row.innerHTML = `
+        <div class="channel-cell">
+          <input type="checkbox" class="play-toggle" title="Play / Stop">
+          ${channel.tvIconUrl
+            ? `<img src="${safe(channel.tvIconUrl)}" alt="${safe(channel.tvId)}" class="h-8 w-8 rounded object-cover ring-1 ring-slate-200" onerror="this.style.display='none'">`
+            : `<div class="h-8 w-8 rounded bg-slate-200 flex items-center justify-center text-[10px] text-slate-500">${safe(channel.displayName||'?').slice(0,2)}</div>`
+          }
+          <div class="text-xs font-medium truncate">${safe(channel.displayName)}</div>
+        </div>
+        <div class="relative flex-1 overflow-hidden" style="height: var(--row-h)"></div>`;
+
+      const progLayer = row.querySelector('.relative');
+
+      // Programmes
+      for (const p of programmes) {
+        const s = Date.parse(p.startTime);
+        const e = Date.parse(p.stopTime);
+        if (!isFinite(s) || !isFinite(e)) continue;
+        if (e <= startTs || s >= endTs) continue;
+
+        const leftMin  = (Math.max(s, startTs) - startTs) / 60000;
+        const widthMin = (Math.min(e, endTs) - Math.max(s, startTs)) / 60000;
+        const left  = leftMin  * PIXELS_PER_MIN;
+        const width = Math.max(30, widthMin * PIXELS_PER_MIN);
+
+        const div = document.createElement('div');
+        div.className = 'epg-cell';
+        div.style.left = left + 'px';
+        div.style.width = width + 'px';
+        div.title = `${fmtTime(p.startTime)}–${fmtTime(p.stopTime)}\n${p.description || ''}`;
+        div.innerHTML = `<div class="font-semibold truncate">${safe(p.title || '')}</div>`;
+        progLayer.appendChild(div);
+      }
+
+      // Play toggle handler
+      const toggle = row.querySelector('.play-toggle');
+      toggle.addEventListener('change', () => onTogglePlay(row));
+
+      container.appendChild(row);
+    }
+
+    function renderNowLine(){
+      const startTs = gridStart.getTime();
+      const endTs   = gridEnd.getTime();
+      const nowTs   = Date.now();
+      const offsetMin = (nowTs - startTs) / 60000;
+      const x = offsetMin * PIXELS_PER_MIN;
+      nowLine.style.left = x + 'px';
+      nowLine.style.display = (nowTs < startTs || nowTs > endTs) ? 'none' : 'block';
+    }
+
+    async function loadPageAndRender(){
+      const nowUTC = new Date();
+      gridStart = alignHourUTC(nowUTC);
+      gridStart = new Date(gridStart.getTime() - 30 * 60_000);
+      gridEnd   = new Date(gridStart.getTime() + (hoursSpan * 3600_000) + 30 * 60_000);
+
+      renderTimeHeader();
+      epgGrid.innerHTML = '<div id="nowLine" class="now-line"></div>';
+
+      try {
+        const channels = await loadChannelsPage();
+        const tasks = channels.map(ch =>
+          fetch(`${API_BASE}${PRG_API(ch.channelId)}`)
+            .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+            .then(page => ({ ch, programmes: page.content || [] }))
+            .catch(_ => ({ ch, programmes: [] }))
+        );
+        const results = await Promise.allSettled(tasks);
+        for (const r of results) {
+          if (r.status === 'fulfilled') {
+            renderProgrammeRow(epgGrid, r.value.ch, r.value.programmes);
+          }
+        }
+        renderNowLine();
+        setStatus('✅ Loaded.');
+      } catch (e) {
+        console.error(e);
+        setStatus('❌ ' + e.message);
+      }
+    }
+
+    /* === Player controls === */
+    function stopPlayer() {
+      try {
+        if (hls) { hls.destroy(); hls = null; }
+        dockVideo.pause();
+        dockVideo.removeAttribute('src');
+        dockVideo.load();
+      } catch (_) {}
+      playerError.classList.add('hidden');
+      playerDock.classList.add('hidden');
+      selectedKey = null;
+
+      // uncheck any toggles
+      document.querySelectorAll('.epg-row .play-toggle:checked').forEach(cb => cb.checked = false);
+    }
+
+    function playUrl(name, url) {
+      playerTitle.textContent = `Now Playing: ${name}`;
+      playerError.classList.add('hidden');
+      playerDock.classList.remove('hidden');
+
+      if (!url) {
+        playerError.textContent = 'No stream URL provided.';
+        playerError.classList.remove('hidden');
+        return;
+      }
+
+      // reset
+      try {
+        if (hls) { hls.destroy(); hls = null; }
+        dockVideo.pause();
+        dockVideo.removeAttribute('src');
+        dockVideo.load();
+      } catch (_) {}
+
+      if (isHls(url)) {
+        if (window.Hls && Hls.isSupported()) {
+          hls = new Hls({ lowLatencyMode: true, backBufferLength: 60 });
+          hls.on(Hls.Events.ERROR, (evt, data) => {
+            if (data.fatal) {
+              switch (data.type) {
+                case Hls.ErrorTypes.NETWORK_ERROR: hls.startLoad(); break;
+                case Hls.ErrorTypes.MEDIA_ERROR: hls.recoverMediaError(); break;
+                default:
+                  playerError.textContent = 'Fatal playback error.';
+                  playerError.classList.remove('hidden');
+                  stopPlayer();
+              }
+            }
+          });
+          hls.loadSource(url);
+          hls.attachMedia(dockVideo);
+          dockVideo.play().catch(()=>{/* autoplay might be blocked unless muted (we keep muted=true) */});
+        } else if (dockVideo.canPlayType('application/vnd.apple.mpegurl')) {
+          dockVideo.src = url;
+          dockVideo.play().catch(()=>{});
+        } else {
+          playerError.textContent = 'HLS not supported in this browser.';
+          playerError.classList.remove('hidden');
+        }
+      } else {
+        // fallback (e.g., mp4)
+        dockVideo.src = url;
+        dockVideo.play().catch(()=>{});
+      }
+    }
+
+    function onTogglePlay(row) {
+      const cb = row.querySelector('.play-toggle');
+      const key = row.dataset.channelId;
+      const url = row.dataset.url;
+      const name = row.dataset.name;
+
+      // If checking a new one, uncheck previous
+      if (cb.checked) {
+        if (selectedKey && selectedKey !== key) {
+          document.querySelectorAll(`.epg-row[data-channel-id="${selectedKey}"] .play-toggle`).forEach(t => t.checked = false);
+        }
+        selectedKey = key;
+        playUrl(name, url);
+      } else {
+        // if the one being unchecked is the current, stop
+        if (selectedKey === key) stopPlayer();
+      }
+    }
+
+    closePlayer.addEventListener('click', stopPlayer);
+
+    /* === Controls === */
+    document.querySelectorAll('button[data-span]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('button[data-span]').forEach(b => b.classList.remove('bg-indigo-100'));
+        btn.classList.add('bg-indigo-100');
+        hoursSpan = Number(btn.getAttribute('data-span'));
+        loadPageAndRender();
+      });
+    });
+    prevBtn.onclick = () => { if (page > 0) { page--; loadPageAndRender(); } };
+    nextBtn.onclick = () => { if (page < totalPages - 1) { page++; loadPageAndRender(); } };
+    pageSizeEl.onchange = () => { size = Number(pageSizeEl.value); localStorage.setItem('epgPageSize', size); page = 0; loadPageAndRender(); };
+
+    setInterval(() => renderNowLine(), 60_000);
+    loadPageAndRender();
+</script>
+</body>
+</html>

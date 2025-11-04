@@ -1,0 +1,24 @@
+spring:
+  application:
+    name: iptv-mapper
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/iptv-mapper}
+    username: ${DB_USER:iptv-mapper}
+    password: ${DB_PASSWORD:change-me}
+
+    jpa:
+      open-in-view: false
+      hibernate:
+        ddl-auto: ${JPA_DDL_AUTO:validate}   # validate|update|create|create-drop (dev only for non-validate)
+      properties:
+        hibernate:
+          dialect: org.hibernate.dialect.PostgreSQLDialect
+          show_sql: ${HIBERNATE_SHOW_SQL:true}
+          format_sql: ${HIBERNATE_FORMAT_SQL:false}
+          jdbc:
+            time_zone: ${JDBC_TIME_ZONE:UTC}
+logging:
+  level:
+    root: INFO
+    io.github.smling.iptv_mapper: DEBUG

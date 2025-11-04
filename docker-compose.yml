@@ -1,0 +1,37 @@
+services:
+  db:
+    image: postgres:16
+    container_name: postgres16
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: iptv-mapper
+      POSTGRES_PASSWORD: change-me
+      POSTGRES_DB: iptv-mapper
+      TZ: Europe/London
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # initialization scripts (run only on first startup)
+      - ./scripts/sql/initial:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U iptv-mapper || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  app:
+    environment:
+      APP_INGEST_ENABLED: "true"
+      APP_INGEST_CRON: "0 0 3 * * *"
+      SPRING_DATASOURCE_URL: "jdbc:postgresql://db:5432/iptv-mapper"
+    image: iptv-mapper:latest
+    container_name: iptv-mapper
+    restart: unless-stop
+    ports:
+      - "80:8080",
+      - "443:8443",
+    depends_on:
+      - db
+
+volumes:
+  pgdata:
