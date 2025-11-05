@@ -79,3 +79,39 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # --- NEW: Create tag and GitHub release ---
+      - name: Determine version
+        id: version
+        run: |
+          # Try to read version from Gradle build if available
+          if ./gradlew properties | grep -q "^version:"; then
+            VERSION=$(./gradlew properties | grep "^version:" | awk '{print $2}')
+          else
+            VERSION="v$(date +'%Y.%m.%d-%H%M')"
+          fi
+
+          # Ensure tag starts with v
+          [[ "$VERSION" != v* ]] && VERSION="v$VERSION"
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "🧾 Using version tag: $VERSION"
+
+      - name: Create Git tag
+        run: |
+          git tag -a "${{ steps.version.outputs.version }}" -m "Release ${{ steps.version.outputs.version }}"
+          git push origin "${{ steps.version.outputs.version }}"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: "Release ${{ steps.version.outputs.version }}"
+          body: |
+            🚀 **Release ${{ steps.version.outputs.version }}**
+            - Automatically published on merge to `main`
+            - Includes the latest Docker image on GHCR
+          files: |
+            build/libs/*.jar
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
