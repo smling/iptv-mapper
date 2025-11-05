@@ -108,7 +108,7 @@ jobs:
           key: depcheck-${{ runner.os }}-${{ hashFiles('**/build.gradle*', '**/pom.xml', '**/package-lock.json') }}
           restore-keys: depcheck-${{ runner.os }}-
 
-      - name: Dependency-Check (NVD API key)
+      - name: Dependency-Check
         id: dc-scan
         continue-on-error: true
         uses: dependency-check/Dependency-Check_Action@main
@@ -123,7 +123,6 @@ jobs:
             --failOnCVSS 7
             --nvdApiKey ${{ secrets.NVD_API_KEY }}
             --enableRetired
-            --data ${{ env.DC_DATA_DIR }}
 
       - name: Upload dependency-check reports
         if: always()
@@ -155,7 +154,7 @@ jobs:
       - name: Gitleaks
         id: gitleaks
         continue-on-error: true
-        uses: gitleaks/gitleaks-action@v2
+        uses: zricethezav/gitleaks-action@v2
         with:
           args: detect --source . --no-git -v --redact --report-format sarif --report-path gitleaks.sarif
 
