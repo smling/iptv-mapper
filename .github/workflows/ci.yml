@@ -1,0 +1,147 @@
+name: CI
+
+on:
+  push:
+
+permissions:
+  contents: read
+  security-events: write   # for CodeQL
+  actions: read
+  packages: read
+
+env:
+  JAVA_VERSION: "25"
+
+jobs:
+  # --- 0) Validate Gradle wrapper (supply-chain hygiene)
+  wrapper-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: gradle/wrapper-validation-action@v2
+
+  # --- 1) Build, test, coverage, style, static checks (Gradle)
+  build-test:
+    runs-on: ubuntu-latest
+    needs: wrapper-validation
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Normalize script endings (optional)
+        run: |
+          find . -name "gradlew" -o -name "*.sh" | xargs -r sed -i 's/\r$//'
+          chmod +x gradlew
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: gradle
+
+      - name: Show Gradle tasks (debug)
+        run: ./gradlew --no-daemon tasks || true
+
+      - name: Run unit tests + coverage (JaCoCo)
+        run: |
+          ./gradlew --no-daemon clean test jacocoTestReport || (echo "❌ tests/coverage failed" && exit 1)
+
+      - name: Optional style & static analysis (runs only if tasks exist)
+        run: |
+          run_if_task() { ./gradlew -q tasks --all | grep -E "^[[:space:]]+$1([[:space:]]|$)" >/dev/null && ./gradlew --no-daemon $1 || echo "↷ skip $1 (task not found)"; }
+          run_if_task spotlessCheck
+          run_if_task checkstyleMain
+          run_if_task checkstyleTest
+          run_if_task pmdMain
+          run_if_task pmdTest
+          run_if_task spotbugsMain
+          run_if_task spotbugsTest
+
+      - name: Archive test & coverage reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports-test-coverage
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            build/reports/tests/**/*
+            build/test-results/**/*
+            build/reports/jacoco/test/html/**/*
+            build/reports/checkstyle/**/*
+            build/reports/spotbugs/**/*
+            build/reports/pmd/**/*
+            build/reports/spotless/**/*
+            **/build/reports/**/*
+
+  # --- 2) Dependency vulnerability scan (OWASP Dependency-Check)
+  dependency-audit:
+    runs-on: ubuntu-latest
+    needs: wrapper-validation
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: OWASP Dependency-Check
+        uses: dependency-check/Dependency-Check_Action@v4
+        with:
+          project: "${{ github.repository }}"
+          path: "."
+          format: "HTML,JSON"
+          out: "dependency-check-report"
+          args: >
+            --enableRetired
+            --nvdApiKey ${{ secrets.NVD_API_KEY }}
+        env:
+          # Cache location for CVE DB to speed subsequent runs
+          NVD_DATA_MIRROR: ""
+      - name: Upload dependency-check reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports-dependency-check
+          path: dependency-check-report/**
+
+  # --- 3) Secret scan (Gitleaks)
+  secrets-scan:
+    runs-on: ubuntu-latest
+    needs: wrapper-validation
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }} # optional, not required
+        with:
+          args: detect --source . --no-git -v --redact --report-format sarif --report-path gitleaks.sarif
+      - name: Upload Gitleaks SARIF to code scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gitleaks.sarif
+
+  # --- 4) CodeQL SAST
+  codeql:
+    runs-on: ubuntu-latest
+    needs: wrapper-validation
+    timeout-minutes: 45
+
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: java
+      - uses: github/codeql-action/autobuild@v3
+      - uses: github/codeql-action/analyze@v3
