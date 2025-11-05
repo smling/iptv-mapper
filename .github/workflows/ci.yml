@@ -12,6 +12,7 @@ permissions:
 env:
   JAVA_VERSION: "21"
   DC_DATA_DIR: ~/.org.owasp.dependencycheck
+  GIT_LEAK_REPORT_PATH: gitleaks.sarif
 
 jobs:
   wrapper-validation:
@@ -99,7 +100,6 @@ jobs:
           path: .
           format: 'HTML'                       # reports to generate
           out: build/reports/dependency-check       # output directory
-          # Fail build on CVSS >= 7.0 (tweak as needed)
           args: >
             --failOnCVSS 7
             --nvdApiKey ${{ secrets.NVD_API_KEY }}
@@ -126,13 +126,20 @@ jobs:
       - name: Gitleaks
         uses: gitleaks/gitleaks-action@v2
         with:
-          args: detect --source . --no-git -v --redact --report-format sarif --report-path gitleaks.sarif
+          args: > 
+            detect 
+            --source . 
+            --no-git 
+            -v 
+            --redact 
+            --report-format sarif 
+            --report-path ${{ env.GIT_LEAK_REPORT_PATH }}
 
       - name: Upload Gitleaks SARIF (if present)
-        if: hashFiles('gitleaks.sarif') != ''
+        if: hashFiles('${{ env.GIT_LEAK_REPORT_PATH }}') != ''
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: gitleaks.sarif
+          sarif_file: ${{ env.GIT_LEAK_REPORT_PATH }}
 
   codeql:
     runs-on: ubuntu-latest
