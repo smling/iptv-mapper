@@ -1,12 +1,11 @@
-name: Build & Publish (on merge to main)
+name: Build, Publish & Release (after merge)
 
 on:
-  pull_request:
-    branches: [ "main" ]
-    types: [ "closed" ]
+  push:
+    branches: [ "main" ]   # runs after the PR is merged
 
 permissions:
-  contents: read
+  contents: write          # needed to create tags & releases
   packages: write
 
 env:
@@ -16,7 +15,6 @@ env:
 
 jobs:
   publish:
-    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -24,21 +22,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0            # needed to create/push tags
-          persist-credentials: true # keep GITHUB_TOKEN for pushes
+          fetch-depth: 0                # allow tagging
+          persist-credentials: true     # keep token for push
 
-      - name: Configure git identity
-        run: |
-          git config user.name  "${{ github.actor }}"
-          git config user.email "${{ github.actor }}@users.noreply.github.com"
-      
-
-      - name: Ensure UNIX line endings for scripts (optional but safe)
+      - name: Normalize scripts
         run: |
           find . -name "gradlew" -o -name "*.sh" | xargs -r sed -i 's/\r$//'
-
-      - name: Make gradlew executable
-        run: chmod +x gradlew
+          chmod +x gradlew
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -50,9 +40,8 @@ jobs:
       - name: Build fat JAR
         run: |
           ./gradlew --no-daemon clean bootJar
-          echo "Built JARs:"
           ls -1 build/libs/*.jar
-          # Dockerfile copies iptv-mapper-*-SNAPSHOT.jar. Ensure one exists:
+          # ensure SNAPSHOT jar for Dockerfile glob if needed
           test -n "$(ls -1 build/libs/*-SNAPSHOT.jar 2>/dev/null)" || {
             j="$(ls -1 build/libs/*.jar | head -n1)"
             cp "$j" build/libs/iptv-mapper-0.0.0-SNAPSHOT.jar
@@ -89,29 +78,33 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # --- NEW: Create tag and GitHub release ---
+      # ----- Tag & Release -----
+      - name: Configure git identity
+        run: |
+          git config user.name  "${{ github.actor }}"
+          git config user.email "${{ github.actor }}@users.noreply.github.com"
+
       - name: Determine version
         id: version
         run: |
-          # Try to read version from Gradle build if available
           if ./gradlew properties | grep -q "^version:"; then
-            VERSION=$(./gradlew properties | grep "^version:" | awk '{print $2}')
+            V=$(./gradlew -q properties | awk -F': ' '/^version:/{print $2}')
           else
-            VERSION="v$(date +'%Y.%m.%d-%H%M')"
+            V="$(date +'%Y.%m.%d-%H%M')"
           fi
+          [[ "$V" != v* ]] && V="v$V"
+          echo "version=$V" >> $GITHUB_OUTPUT
+          echo "Using tag: $V"
 
-          # Ensure tag starts with v
-          [[ "$VERSION" != v* ]] && VERSION="v$VERSION"
-
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "🧾 Using version tag: $VERSION"
-
-      - name: Create Git tag
+      - name: Create tag if missing
         run: |
           TAG="${{ steps.version.outputs.version }}"
-          git tag -fa "${TAG}" -m "Release ${TAG}"
-          git push origin ":refs/tags/${TAG}" || true
-          git push origin "${TAG}"
+          if git ls-remote --tags origin | grep -q "refs/tags/${TAG}$"; then
+            echo "Tag ${TAG} already exists on origin; skipping."
+          else
+            git tag -a "${TAG}" -m "Release ${TAG}"
+            git push origin "${TAG}"
+          fi
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -119,9 +112,9 @@ jobs:
           tag_name: ${{ steps.version.outputs.version }}
           name: "Release ${{ steps.version.outputs.version }}"
           body: |
-            🚀 **Release ${{ steps.version.outputs.version }}**
-            - Automatically published on merge to `main`
-            - Includes the latest Docker image on GHCR
+            🚀 Release ${{ steps.version.outputs.version }}
+            - Auto-published on push to `main`
+            - Container: ghcr.io/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
           files: |
             build/libs/*.jar
         env:
