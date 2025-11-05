@@ -11,6 +11,7 @@ permissions:
 
 env:
   JAVA_VERSION: "21"
+  DC_DATA_DIR: ~/.org.owasp.dependencycheck
 
 jobs:
   wrapper-validation:
