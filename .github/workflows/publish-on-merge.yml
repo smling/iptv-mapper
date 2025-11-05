@@ -108,6 +108,7 @@ jobs:
 
       - name: Create Git tag
         run: |
+          TAG="${{ steps.version.outputs.version }}"
           git tag -fa "${TAG}" -m "Release ${TAG}"
           git push origin ":refs/tags/${TAG}" || true
           git push origin "${TAG}"
