@@ -23,6 +23,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0            # needed to create/push tags
+          persist-credentials: true # keep GITHUB_TOKEN for pushes
+
+      - name: Configure git identity
+        run: |
+          git config user.name  "${{ github.actor }}"
+          git config user.email "${{ github.actor }}@users.noreply.github.com"
+      
 
       - name: Ensure UNIX line endings for scripts (optional but safe)
         run: |
@@ -99,8 +108,9 @@ jobs:
 
       - name: Create Git tag
         run: |
-          git tag -a "${{ steps.version.outputs.version }}" -m "Release ${{ steps.version.outputs.version }}"
-          git push origin "${{ steps.version.outputs.version }}"
+          git tag -fa "${TAG}" -m "Release ${TAG}"
+          git push origin ":refs/tags/${TAG}" || true
+          git push origin "${TAG}"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
