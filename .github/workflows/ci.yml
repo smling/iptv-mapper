@@ -117,7 +117,7 @@ jobs:
         with:
           project: ${{ github.repository }}
           path: .
-          format: 'HTML,JSON'
+          format: 'HTML'
           out: build/reports/dependency-check
           args: >
             --failOnCVSS 7
