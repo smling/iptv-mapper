@@ -1,0 +1,23 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:iptv;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop   # or 'none' if you use schema.sql for tests
+    properties:
+      hibernate:
+        globally_quoted_identifiers: true
+  sql:
+    init:
+      mode: never
+
+  flyway:
+    enabled: false            # skip migrations in CI unit tests
+
+# turn off scheduled jobs in tests
+app:
+  ingest:
+    enabled: false
