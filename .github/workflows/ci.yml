@@ -103,7 +103,8 @@ jobs:
           args: >
             --failOnCVSS 7
             --nvdApiKey ${{ secrets.NVD_API_KEY }}
-            --data ~/.org.owasp.dependencycheck
+            --enableRetired
+          # --data ~/.org.owasp.dependencycheck
 
       - name: Upload dependency-check reports
         if: always()
