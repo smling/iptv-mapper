@@ -81,16 +81,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: OWASP Dependency-Check
+      - name: Dependency-Check (NVD API key)
         uses: dependency-check/Dependency-Check_Action@main
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}   # <-- your secret
         with:
-          project: "${{ github.repository }}"
-          path: "."
-          format: "HTML,JSON"
-          out: "dependency-check-report"
+          project: ${{ github.repository }}
+          path: .
+          format: 'HTML,JSON'                       # reports to generate
+          out: build/reports/dependency-check       # output directory
+          # Fail build on CVSS >= 7.0 (tweak as needed)
           args: >
-            --enableRetired
+            --failOnCVSS 7
             --nvdApiKey ${{ secrets.NVD_API_KEY }}
+            --data ~/.org.owasp.dependencycheck
+
       - name: Upload dependency-check reports
         if: always()
         uses: actions/upload-artifact@v4
