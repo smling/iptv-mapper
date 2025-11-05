@@ -104,7 +104,6 @@ jobs:
             --failOnCVSS 7
             --nvdApiKey ${{ secrets.NVD_API_KEY }}
             --enableRetired
-          # --data ~/.org.owasp.dependencycheck
 
       - name: Upload dependency-check reports
         if: always()
@@ -126,14 +125,7 @@ jobs:
       - name: Gitleaks
         uses: gitleaks/gitleaks-action@v2
         with:
-          args: > 
-            detect 
-            --source . 
-            --no-git 
-            -v 
-            --redact 
-            --report-format sarif 
-            --report-path ${{ env.GIT_LEAK_REPORT_PATH }}
+          args: detect --source . --no-git -v --redact --report-format sarif --report-path ${{ env.GIT_LEAK_REPORT_PATH }}
 
       - name: Upload Gitleaks SARIF (if present)
         if: hashFiles('${{ env.GIT_LEAK_REPORT_PATH }}') != ''
