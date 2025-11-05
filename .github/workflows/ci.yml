@@ -81,6 +81,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Cache OWASP DC data dir
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.DC_DATA_DIR }}
+          key: depcheck-${{ runner.os }}-${{ hashFiles('**/build.gradle*', '**/pom.xml', '**/package-lock.json') }}
+          restore-keys: |
+            depcheck-${{ runner.os }}-
+
+      # STEP 1: ensure DB exists (downloads NVD feeds)
+      - name: Dependency-Check update-only (populate DB)
+        uses: dependency-check/Dependency-Check_Action@main
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+        with:
+          project: "${{ github.repository }}-update"
+          # a path is required, but update-only will skip scanning
+          path: .
+          out: build/reports/dependency-check
+          format: "HTML"
+          args: >
+            --updateonly
+            --nvdApiKey ${{ secrets.NVD_API_KEY }}
+            --data ${{ env.DC_DATA_DIR }}
+
       - name: Dependency-Check (NVD API key)
         uses: dependency-check/Dependency-Check_Action@main
         env:
