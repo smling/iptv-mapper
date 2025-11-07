@@ -2,12 +2,15 @@ package io.github.smling.iptv_mapper.parsers;
 
 import io.github.smling.iptv_mapper.models.dto.m3u.M3UItem;
 import io.github.smling.iptv_mapper.models.dto.m3u.M3UPlaylist;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.net.URI;
 import java.time.Duration;
 import java.util.*;
 
 public class M3UPlaylistParser {
+    private final Logger logger = LoggerFactory.getLogger(M3UPlaylistParser.class);
     /**
      * Parses M3U/M3U8 text into DTOs.
      * Supports common IPTV lists like:
@@ -52,7 +55,15 @@ public class M3UPlaylistParser {
                     String next = lines[j].trim();
                     if (next.isEmpty()) { j++; continue; }
                     if (next.startsWith("#")) { j++; continue; } // skip other tags like #EXTVLCOPT, #EXTGRP, etc.
-                    mediaUri = baseUri.resolve(next);
+                    try {
+
+                        mediaUri = baseUri.resolve(next);
+                        // Validate URI syntax
+                        mediaUri.toURL(); // Will throw if invalid
+                    } catch (Exception e) {
+                        logger.warn("⚠️ [M3UPlaylistParser] Invalid media URI: {} ({}), skipping item.", next, e.getMessage());
+                        mediaUri = null;
+                    }
                     break;
                 }
                 if (mediaUri == null) {
