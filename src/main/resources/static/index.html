@@ -260,8 +260,8 @@
     // Wire links
     const m3uLink = document.getElementById('m3uLink');
     const epgLink = document.getElementById('epgLink');
-    if (m3uLink) m3uLink.href = `${API_BASE}/api/v1/m3u/playlist`;
-    if (epgLink) epgLink.href = `${API_BASE}/api/v1/epg/xmltv`;
+    if (m3uLink) m3uLink.href = `${API_BASE}/api/v1/m3u`;
+    if (epgLink) epgLink.href = `${API_BASE}/api/v1/epg`;
 
     const CH_API   = '/api/v1/m3u/mappings/channel';
     const PRG_API  = (id) => `/api/v1/epg/channel/${id}/programmes?size=500&sort=startTime,asc`;
