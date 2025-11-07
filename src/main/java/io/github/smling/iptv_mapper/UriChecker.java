@@ -28,7 +28,10 @@ public class UriChecker {
 
     // Accept 2xx/3xx as reachable; 401/403 mean "alive but requires auth" → also acceptable for health-check
     private static boolean isReachableCode(int code) {
-        return (code >= 200 && code < 400) || code == 401 || code == 403;
+        return (code >= 200 && code < 400)
+                || code == 401
+                || code == 403
+                ;
     }
 
     public UriChecker(HttpClient http, Duration hardTimeout, HttpClient.Version httpVersion, Executor executor) {
