@@ -8,7 +8,21 @@ RUN groupadd --gid 10001 appuser \
 
 USER appuser
 
-ENV TZ=Europe/London SPRING_PROFILES_ACTIVE=prod APP_INGEST_CRON="0 0 3 * * *" APP_INGEST_ENABLED="true" JAVA_OPTS="" SPRING_FLYWAY_LOCATIONS=filesystem:/app/db/init
+ENV TZ=Europe/London \
+    SPRING_PROFILES_ACTIVE=prod \
+    APP_INGEST_CRON="0 0 3 * * *" \
+    APP_INGEST_ENABLED="true" \
+    SPRING_FLYWAY_LOCATIONS=filesystem:/app/db/init \
+    JAVA_OPTS="-XX:+UseContainerSupport \
+               -XX:MaxRAMPercentage=70 \
+               -XX:InitialRAMPercentage=50 \
+               -XX:+UseG1GC \
+               -XX:+UseStringDeduplication \
+               -XX:+ExitOnOutOfMemoryError \
+               -XX:+HeapDumpOnOutOfMemoryError \
+               -XX:HeapDumpPath=/app/oom.hprof \
+               -Djava.security.egd=file:/dev/urandom \
+               "
 COPY build/libs/iptv-mapper-*-SNAPSHOT.jar /app/app.jar
 COPY scripts/sql/initial /app/db/init
 EXPOSE 8080 8443

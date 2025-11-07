@@ -6,7 +6,7 @@ plugins {
 }
 
 group = 'io.github.smling'
-version = '0.0.4-SNAPSHOT'
+version = '0.0.5-SNAPSHOT'
 description = 'Demo project for Spring Boot'
 
 java {
