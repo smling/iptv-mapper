@@ -33,10 +33,10 @@ services:
     # For remote deployment.
 #    image: ghcr.io/smling/iptv-mapper:latest
     container_name: iptv-mapper
-    restart: unless-stop
+    restart: unless-stopped
     ports:
-      - "80:8080",
-      - "443:8443",
+      - "8080:8080"
+      - "8443:8443"
     depends_on:
       - db
 
