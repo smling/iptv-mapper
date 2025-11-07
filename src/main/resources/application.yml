@@ -6,10 +6,14 @@ spring:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/iptv-mapper}
     username: ${DB_USER:iptv-mapper}
     password: ${DB_PASSWORD:change-me}
-
+    flyaway:
+      enabled: ${SPRING_FLYWAY_ENABLED:true}
+      locations: ${SPRING_FLYWAY_LOCATIONS:filesystem:scripts/sql/initial}
+      baseline-on-migrate: ${SPRING_FLYWAY_BASELINE_ON_MIGRATE:true}
     jpa:
       open-in-view: false
       hibernate:
+        auto: none
         ddl-auto: ${JPA_DDL_AUTO:validate}   # validate|update|create|create-drop (dev only for non-validate)
       properties:
         hibernate:
