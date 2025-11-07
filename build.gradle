@@ -6,7 +6,7 @@ plugins {
 }
 
 group = 'io.github.smling'
-version = '0.0.1-SNAPSHOT'
+version = '0.0.2-SNAPSHOT'
 description = 'Demo project for Spring Boot'
 
 java {
@@ -27,6 +27,7 @@ dependencies {
 
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.postgresql:postgresql'
+    implementation "org.flywaydb:flyway-core"
 
 
     implementation("com.fasterxml.jackson.core:jackson-core")
