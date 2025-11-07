@@ -24,7 +24,14 @@ services:
       APP_INGEST_ENABLED: "true"
       APP_INGEST_CRON: "0 0 3 * * *"
       SPRING_DATASOURCE_URL: "jdbc:postgresql://db:5432/iptv-mapper"
+      DB_URL: jdbc:postgresql://home-postgresql-sr01:5432/iptv-mapper
+      DB_USER: iptv-mapper
+      DB_PASSWORD: change-me
+      SPRING_FLYWAY_LOCATIONS: filesystem:/app/db/init
+    # For local environment.
     image: iptv-mapper:latest
+    # For remote deployment.
+#    image: ghcr.io/smling/iptv-mapper:latest
     container_name: iptv-mapper
     restart: unless-stop
     ports:
@@ -35,3 +42,4 @@ services:
 
 volumes:
   pgdata:
+
