@@ -5,73 +5,222 @@
     <title>EPG Grid</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <!-- Optional: <meta name="api-port" content="9090"> -->
+
+    <!-- Tailwind (layout only; colors via CSS variables) -->
+    <script>window.tailwind={config:{darkMode:'class'}};</script>
     <script src="https://cdn.tailwindcss.com"></script>
+
     <!-- hls.js for HLS streams -->
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
+
     <style>
-        :root { --row-h: 64px; }
-        body { overflow: hidden; }
-        .epg-cell {
-          position: absolute; top: 0; bottom: 0;
-          border: 1px solid #d1d5db; border-radius: .25rem;
-          background: #f8fafc; padding: .25rem .5rem;
-          overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-          font-size: .75rem; box-sizing: border-box;
+        :root{
+          --row-h: 64px;
+
+          /* Light theme */
+          --bg:            #f8fafc;  /* page background */
+          --fg:            #0f172a;  /* text */
+          --muted:         #475569;
+          --surface:       #ffffff;  /* header/cards */
+          --surface-weak:  #f1f5f9;  /* sticky header bg */
+          --cell-bg:       #ffffff;  /* programme cells */
+          --border:        #e5e7eb;  /* borders */
+          --cell-border:   #d1d5db;
+          --now:           #3b82f6;
+          --icon:          #334155;
+
+          --toggle-bg:         #ffffff;
+          --toggle-border:     #cbd5e1;
+          --toggle-active:     #e0e7ff;
+          --toggle-active-brd: #6366f1;
+          --toggle-icon:       #334155;
+          --toggle-icon-act:   #3730a3;
+          --chip-bg:           #ffffff;
+          --chip-border:       #e5e7eb;
+          --input-bg:          #ffffff;
+          --input-brd:         #cbd5e1;
         }
-        .now-line { position:absolute; top:0; bottom:0; width:2px; background:#3b82f6; z-index:20; }
-        .epg-row { position: relative; height: var(--row-h); border-bottom: 1px solid #e5e7eb; box-sizing: border-box; }
-        .channel-cell {
-          position: sticky; left: 0;
-          display: flex; align-items: center; gap: .5rem;
-          width: 15rem; min-width: 15rem;
-          height: 100%;
-          background: white;
-          border-right: 1px solid #e5e7eb;
-          box-sizing: border-box;
-          padding: 0 .5rem;
-          z-index: 5;
+        .dark{
+          /* Dark theme */
+          --bg:            #0b1220;
+          --fg:            #e5e7eb;
+          --muted:         #cbd5e1;
+          --surface:       #0f172a;
+          --surface-weak:  #111827;
+          --cell-bg:       #111827;
+          --border:        #334155;
+          --cell-border:   #374151;
+          --now:           #60a5fa;
+          --icon:          #cbd5e1;
+
+          --toggle-bg:         #0f172a;
+          --toggle-border:     #475569;
+          --toggle-active:     #1f2937;
+          --toggle-active-brd: #6366f1;
+          --toggle-icon:       #cbd5e1;
+          --toggle-icon-act:   #a5b4fc;
+          --chip-bg:           #0b1220;
+          --chip-border:       #334155;
+          --input-bg:          #0f172a;
+          --input-brd:         #475569;
         }
-        .play-toggle {
-          appearance: none;
-          width: 22px; height: 22px; border-radius: 6px;
-          border: 1px solid #cbd5e1; display: grid; place-items: center;
-          cursor: pointer; background: #fff;
+
+        /* Generic themed helpers */
+        body       { overflow: hidden; background: var(--bg); color: var(--fg); }
+        .t-surface { background: var(--surface); color: var(--fg); border-color: var(--border); }
+        .t-weak    { background: var(--surface-weak); }
+        .t-border  { border-color: var(--border); }
+        .t-input   { background: var(--input-bg); border-color: var(--input-brd); color: var(--fg); }
+        .t-muted   { color: var(--muted); }
+        .t-link    { color: #4f46e5; }  /* indigo-600-ish */
+        .t-link:hover { color: #3730a3; }
+
+        /* EPG-specific */
+        .epg-cell{
+          position:absolute; top:0; bottom:0;
+          border:1px solid var(--cell-border); border-radius:.25rem;
+          background:var(--cell-bg); padding:.25rem .5rem;
+          overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+          font-size:.75rem; box-sizing:border-box;
         }
-        .play-toggle::before { content: "▶"; font-size: 12px; color: #334155; }
-        .play-toggle:checked { background: #e0e7ff; border-color: #6366f1; }
-        .play-toggle:checked::before { content: "■"; color: #3730a3; }
+        .now-line{ position:absolute; top:0; bottom:0; width:2px; background:var(--now); z-index:20; }
+        .epg-row{ position:relative; height:var(--row-h); border-bottom:1px solid var(--border); box-sizing:border-box; }
+        .channel-cell{
+          position:sticky; left:0; display:flex; align-items:center; gap:.5rem;
+          width:15rem; min-width:15rem; height:100%;
+          background:var(--chip-bg); border-right:1px solid var(--chip-border);
+          box-sizing:border-box; padding:0 .5rem; z-index:5;
+        }
+        .play-toggle{
+          appearance:none; width:22px; height:22px; border-radius:6px;
+          border:1px solid var(--toggle-border); display:grid; place-items:center;
+          cursor:pointer; background:var(--toggle-bg);
+        }
+        .play-toggle::before{ content:"▶"; font-size:12px; color:var(--toggle-icon); }
+        .play-toggle:checked{ background:var(--toggle-active); border-color:var(--toggle-active-brd); }
+        .play-toggle:checked::before{ content:"■"; color:var(--toggle-icon-act); }
+
+        /* Tiny button highlight for emoji theme buttons */
+        .is-active { background: #e0e7ff; border-color:#6366f1; }
+        .dark .is-active { background: #1f2937; border-color:#6366f1; }
     </style>
+
+    <!-- Theme bootstrap (earliest; tolerant of missing body) -->
+    <script>
+        const THEME_COOKIE='ui_theme';
+        const mqDark = window.matchMedia('(prefers-color-scheme: dark)');
+
+        function setCookie(name,val,days=365){
+          const maxAge=days*86400, secure=location.protocol==='https:'?'; Secure':'';
+          document.cookie=`${name}=${encodeURIComponent(val)}; Path=/; Max-Age=${maxAge}; SameSite=Strict${secure}`;
+        }
+        function getCookie(name){
+          const map=document.cookie.split('; ').reduce((a,p)=>{const[k,...r]=p.split('=');a[k]=r.join('=');return a;},{});
+          return map[name]?decodeURIComponent(map[name]):'';
+        }
+        function setModeClass(mode){
+          const root=document.documentElement, body=document.body||null;
+          root.classList.remove('dark'); if(body) body.classList.remove('dark');
+          const dark = mode==='dark' || (mode==='auto' && mqDark.matches);
+          if(dark){ root.classList.add('dark'); if(body) body.classList.add('dark'); }
+          if(!body){
+            document.addEventListener('DOMContentLoaded',()=>{
+              const b=document.body;
+              b.classList.remove('dark');
+              if(dark) b.classList.add('dark');
+            },{once:true});
+          }
+        }
+        function bindSystemListener(mode){
+          mqDark.onchange=null;
+          if(mode==='auto'){ mqDark.onchange=()=>setModeClass('auto'); }
+        }
+        function updateThemeButtons(mode){
+          const btns=document.querySelectorAll('#themeButtons .theme-btn');
+          btns.forEach(b=>b.classList.toggle('is-active', b.dataset.theme===mode));
+        }
+        function initTheme(){
+          const saved=(getCookie(THEME_COOKIE)||'auto').toLowerCase();
+          const mode=['auto','light','dark'].includes(saved)?saved:'auto';
+          setModeClass(mode); bindSystemListener(mode);
+          if(document.readyState==='loading'){
+            document.addEventListener('DOMContentLoaded',()=>updateThemeButtons(mode),{once:true});
+          }else updateThemeButtons(mode);
+          return mode;
+        }
+        let currentMode=initTheme();
+        window.addEventListener('DOMContentLoaded',()=>{
+          document.querySelectorAll('#themeButtons .theme-btn').forEach(btn=>{
+            btn.addEventListener('click',()=>{
+              currentMode=btn.dataset.theme;
+              setModeClass(currentMode); bindSystemListener(currentMode);
+              setCookie(THEME_COOKIE,currentMode); updateThemeButtons(currentMode);
+            });
+          });
+        });
+    </script>
 </head>
-<body class="bg-slate-50 text-slate-800 antialiased">
+<body class="antialiased">
 <div class="flex h-screen flex-col">
     <!-- Header -->
-    <header class="flex items-center gap-3 bg-white px-4 py-2 shadow">
+    <header class="t-surface border-b flex items-center gap-3 px-4 py-2 shadow">
         <h1 class="text-lg md:text-xl font-semibold">📺 TV Guide</h1>
+
+        <!-- Search -->
+        <div class="relative">
+            <input id="searchBox" type="text" placeholder="Search channel…"
+                   class="t-input rounded border px-3 py-1 text-sm focus:outline-none focus:ring"
+                   style="min-width:12rem;">
+            <button id="clearSearch"
+                    class="absolute right-1 top-1 text-xs t-muted hidden">✕</button>
+        </div>
+
+        <!-- Theme emoji buttons -->
+        <div id="themeButtons" class="ml-2 flex items-center gap-2 text-sm">
+            <span class="t-muted">Theme:</span>
+            <button data-theme="light" title="Light"
+                    class="theme-btn px-2 py-1 rounded border t-border">🌞</button>
+            <button data-theme="dark" title="Dark"
+                    class="theme-btn px-2 py-1 rounded border t-border">🌙</button>
+            <button data-theme="auto" title="Auto (System)"
+                    class="theme-btn px-2 py-1 rounded border t-border">🌓</button>
+        </div>
+
+        <!-- Links: M3U & EPG -->
+        <div class="ml-2 flex items-center gap-3 text-sm">
+            <a id="m3uLink" href="#" target="_blank" class="flex items-center gap-1 t-link" title="Open M3U playlist">
+                <span>📄</span><span>M3U</span>
+            </a>
+            <a id="epgLink" href="#" target="_blank" class="flex items-center gap-1 t-link" title="Open EPG (XMLTV)">
+                <span>🗓️</span><span>EPG</span>
+            </a>
+        </div>
+
         <div class="ml-auto flex items-center gap-2 text-sm">
-            <span class="text-slate-600">Gridspan:</span>
-            <button data-span="3"  class="px-2 py-1 rounded border">3h</button>
-            <button data-span="6"  class="px-2 py-1 rounded border">6h</button>
-            <button data-span="9"  class="px-2 py-1 rounded border bg-indigo-100">9h</button>
-            <button data-span="12" class="px-2 py-1 rounded border">12h</button>
+            <span class="t-muted">Gridspan:</span>
+            <button data-span="3"  class="px-2 py-1 rounded border t-border">3h</button>
+            <button data-span="6"  class="px-2 py-1 rounded border t-border">6h</button>
+            <button data-span="9"  class="px-2 py-1 rounded border t-border is-active">9h</button>
+            <button data-span="12" class="px-2 py-1 rounded border t-border">12h</button>
 
-            <div class="h-4 w-px bg-slate-300 mx-2"></div>
+            <div class="h-4 w-px mx-2" style="background: var(--border)"></div>
 
-            <label class="text-slate-600">Page size</label>
-            <select id="pageSize" class="rounded border px-2 py-1">
+            <label class="t-muted">Page size</label>
+            <select id="pageSize" class="t-input rounded border px-2 py-1">
                 <option>10</option><option>25</option><option selected>50</option><option>100</option>
             </select>
-            <button id="prevPage" class="px-2 py-1 rounded border">‹ Prev</button>
-            <button id="nextPage" class="px-2 py-1 rounded border">Next ›</button>
-            <span id="pageInfo" class="text-slate-600"></span>
+            <button id="prevPage" class="px-2 py-1 rounded border t-border">‹ Prev</button>
+            <button id="nextPage" class="px-2 py-1 rounded border t-border">Next ›</button>
+            <span id="pageInfo" class="t-muted"></span>
         </div>
     </header>
 
     <!-- Combined scroll -->
-    <div id="scrollContainer" class="flex-1 overflow-auto bg-white relative">
-        <!-- Sticky header -->
-        <div class="sticky top-0 z-10 bg-slate-100 border-b flex">
-            <div class="w-[15rem] min-w-[15rem] border-r bg-slate-50"></div>
-            <div id="timeHeader" class="flex text-xs text-slate-700"></div>
+    <div id="scrollContainer" class="flex-1 overflow-auto t-surface" style="background: var(--surface);">
+        <!-- Sticky time header -->
+        <div class="sticky top-0 z-10 t-weak t-border border-b flex">
+            <div class="w-[15rem] min-w-[15rem] border-r t-border" style="background: var(--surface);"></div>
+            <div id="timeHeader" class="flex text-xs" style="color: var(--muted);"></div>
         </div>
 
         <!-- Grid rows -->
@@ -80,25 +229,25 @@
         </div>
     </div>
 
-    <div id="status" class="px-4 py-1 text-sm text-slate-600"></div>
+    <div id="status" class="px-4 py-1 text-sm t-muted"></div>
 </div>
 
 <!-- Floating mini player -->
 <div id="playerDock" class="fixed bottom-3 right-3 z-50 hidden">
-    <div class="w-[360px] rounded-xl border border-slate-200 bg-white shadow-xl">
-        <div class="flex items-center justify-between px-3 py-2 border-b">
+    <div class="w-[360px] rounded-xl border t-border t-surface shadow-xl">
+        <div class="flex items-center justify-between px-3 py-2 border-b t-border">
             <div id="playerTitle" class="text-sm font-medium truncate">Now Playing</div>
-            <button id="closePlayer" class="text-xs px-2 py-1 rounded border hover:bg-slate-50">Close</button>
+            <button id="closePlayer" class="text-xs px-2 py-1 rounded border t-border">Close</button>
         </div>
         <div class="p-2">
-            <video id="dockVideo" class="w-full aspect-video bg-black rounded" controls autoplay muted playsinline crossorigin="anonymous"></video>
-            <div id="playerError" class="mt-2 text-xs text-red-600 hidden"></div>
+            <video id="dockVideo" class="w-full aspect-video rounded" style="background:#000" controls autoplay muted playsinline crossorigin="anonymous"></video>
+            <div id="playerError" class="mt-2 text-xs hidden" style="color:#ef4444"></div>
         </div>
     </div>
 </div>
 
 <script>
-    /* === API base: host from current page; port from env/meta/query or default 8080 === */
+    /* API base */
     const DEFAULT_PORT = 8080;
     const metaPort = document.querySelector('meta[name="api-port"]')?.content;
     const urlPort  = new URLSearchParams(location.search).get('apiPort');
@@ -107,11 +256,17 @@
     const HOST     = location.hostname || 'localhost';
     const PROTO    = location.protocol || 'http:';
     const API_BASE = `${PROTO}//${HOST}:${PORT}`;
+
+    // Wire links
+    const m3uLink = document.getElementById('m3uLink');
+    const epgLink = document.getElementById('epgLink');
+    if (m3uLink) m3uLink.href = `${API_BASE}/api/v1/m3u/playlist`;
+    if (epgLink) epgLink.href = `${API_BASE}/api/v1/epg/xmltv`;
+
     const CH_API   = '/api/v1/m3u/mappings/channel';
     const PRG_API  = (id) => `/api/v1/epg/channel/${id}/programmes?size=500&sort=startTime,asc`;
 
-    /* === Elements === */
-    const scrollContainer = document.getElementById('scrollContainer');
+    /* Elements */
     const epgGrid = document.getElementById('epgGrid');
     const timeHeader = document.getElementById('timeHeader');
     const nowLine = document.getElementById('nowLine');
@@ -121,28 +276,27 @@
     const prevBtn = document.getElementById('prevPage');
     const nextBtn = document.getElementById('nextPage');
 
-    // Player
     const playerDock = document.getElementById('playerDock');
     const dockVideo  = document.getElementById('dockVideo');
     const playerTitle = document.getElementById('playerTitle');
     const playerError = document.getElementById('playerError');
     const closePlayer = document.getElementById('closePlayer');
 
-    /* === State === */
-    const ROW_H = 64;
-    const PIXELS_PER_MIN = 3; // 180px/hour
-    let hoursSpan = 9;
-    let page = 0;
+    const searchBox = document.getElementById('searchBox');
+    const clearBtn  = document.getElementById('clearSearch');
+
+    /* State */
+    const PIXELS_PER_MIN = 3;  // 180px/hour
+    let hoursSpan = 9, page = 0;
     let size = Number(localStorage.getItem('epgPageSize')) || 50;
     pageSizeEl.value = String(size);
     let totalPages = 1, totalElements = 0;
     let gridStart, gridEnd;
 
-    // Playback
     let hls = null;
-    let selectedKey = null; // channelId of the currently checked item
+    let selectedKey = null;
 
-    /* === Helpers === */
+    /* Helpers */
     const safe = (v) => v == null ? '' : String(v);
     const fmtTime = (t) => new Date(t).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
     const alignHourUTC = (d) => { const x = new Date(d); x.setUTCMinutes(0,0,0); return x; };
@@ -151,21 +305,21 @@
     function setPageInfo(){ pageInfoEl.textContent = `Page ${page+1} / ${Math.max(1,totalPages)} • ${totalElements.toLocaleString()} rows`; }
     const isHls = (u) => /\.m3u8(\?.*)?$/i.test(u) || (u && u.includes('m3u8'));
 
-    /* === Time Header === */
+    /* Time header */
     function renderTimeHeader(){
       const hourWidth = 60 * PIXELS_PER_MIN;
       const cols = [];
       const cursor = new Date(gridStart);
       while (cursor < gridEnd) {
         const label = cursor.toLocaleTimeString([], { hour:'numeric' });
-        cols.push(`<div class="flex-none text-center border-l w-[${hourWidth}px] py-1 bg-slate-50">${label}</div>`);
+        cols.push(`<div class="flex-none text-center border-l t-border w-[${hourWidth}px] py-1" style="background: var(--surface); color: var(--muted);">${label}</div>`);
         cursor.setHours(cursor.getHours()+1);
       }
       timeHeader.style.width = totalWidthPx() + 'px';
       timeHeader.innerHTML = cols.join('');
     }
 
-    /* === Channels === */
+    /* Data + render */
     async function loadChannelsPage(){
       setStatus('⏳ Loading channels…');
       const res = await fetch(`${API_BASE}${CH_API}?page=${page}&size=${size}&sort=displayName,asc`);
@@ -187,13 +341,15 @@
       row.dataset.url = channel.url || '';
       row.dataset.name = channel.displayName || channel.title || 'Unknown';
 
-      // Channel cell with play checkbox
       row.innerHTML = `
         <div class="channel-cell">
           <input type="checkbox" class="play-toggle" title="Play / Stop">
           ${channel.tvIconUrl
-            ? `<img src="${safe(channel.tvIconUrl)}" alt="${safe(channel.tvId)}" class="h-8 w-8 rounded object-cover ring-1 ring-slate-200" onerror="this.style.display='none'">`
-            : `<div class="h-8 w-8 rounded bg-slate-200 flex items-center justify-center text-[10px] text-slate-500">${safe(channel.displayName||'?').slice(0,2)}</div>`
+            ? `<img src="${safe(channel.tvIconUrl)}" alt="${safe(channel.tvId)}"
+                    class="h-8 w-8 rounded object-cover" style="outline:1px solid var(--border)"
+                    onerror="this.style.display='none'">`
+            : `<div class="h-8 w-8 rounded flex items-center justify-center text-[10px]"
+                 style="background:#cbd5e1;color:#334155">${safe(channel.displayName||'?').slice(0,2)}</div>`
           }
           <div class="text-xs font-medium truncate">${safe(channel.displayName)}</div>
         </div>
@@ -201,7 +357,6 @@
 
       const progLayer = row.querySelector('.relative');
 
-      // Programmes
       for (const p of programmes) {
         const s = Date.parse(p.startTime);
         const e = Date.parse(p.stopTime);
@@ -222,7 +377,6 @@
         progLayer.appendChild(div);
       }
 
-      // Play toggle handler
       const toggle = row.querySelector('.play-toggle');
       toggle.addEventListener('change', () => onTogglePlay(row));
 
@@ -258,19 +412,18 @@
         );
         const results = await Promise.allSettled(tasks);
         for (const r of results) {
-          if (r.status === 'fulfilled') {
-            renderProgrammeRow(epgGrid, r.value.ch, r.value.programmes);
-          }
+          if (r.status === 'fulfilled') renderProgrammeRow(epgGrid, r.value.ch, r.value.programmes);
         }
         renderNowLine();
         setStatus('✅ Loaded.');
+        if ((searchBox?.value || '').trim()) filterChannels();
       } catch (e) {
         console.error(e);
         setStatus('❌ ' + e.message);
       }
     }
 
-    /* === Player controls === */
+    /* Player */
     function stopPlayer() {
       try {
         if (hls) { hls.destroy(); hls = null; }
@@ -281,29 +434,18 @@
       playerError.classList.add('hidden');
       playerDock.classList.add('hidden');
       selectedKey = null;
-
-      // uncheck any toggles
       document.querySelectorAll('.epg-row .play-toggle:checked').forEach(cb => cb.checked = false);
     }
-
     function playUrl(name, url) {
       playerTitle.textContent = `Now Playing: ${name}`;
       playerError.classList.add('hidden');
       playerDock.classList.remove('hidden');
 
       if (!url) {
-        playerError.textContent = 'No stream URL provided.';
-        playerError.classList.remove('hidden');
-        return;
+        playerError.textContent = 'No stream URL provided.'; playerError.classList.remove('hidden'); return;
       }
 
-      // reset
-      try {
-        if (hls) { hls.destroy(); hls = null; }
-        dockVideo.pause();
-        dockVideo.removeAttribute('src');
-        dockVideo.load();
-      } catch (_) {}
+      try { if (hls) { hls.destroy(); hls = null; } dockVideo.pause(); dockVideo.removeAttribute('src'); dockVideo.load(); } catch (_){}
 
       if (isHls(url)) {
         if (window.Hls && Hls.isSupported()) {
@@ -314,55 +456,42 @@
                 case Hls.ErrorTypes.NETWORK_ERROR: hls.startLoad(); break;
                 case Hls.ErrorTypes.MEDIA_ERROR: hls.recoverMediaError(); break;
                 default:
-                  playerError.textContent = 'Fatal playback error.';
-                  playerError.classList.remove('hidden');
-                  stopPlayer();
+                  playerError.textContent = 'Fatal playback error.'; playerError.classList.remove('hidden'); stopPlayer();
               }
             }
           });
-          hls.loadSource(url);
-          hls.attachMedia(dockVideo);
-          dockVideo.play().catch(()=>{/* autoplay might be blocked unless muted (we keep muted=true) */});
-        } else if (dockVideo.canPlayType('application/vnd.apple.mpegurl')) {
-          dockVideo.src = url;
+          hls.loadSource(url); hls.attachMedia(dockVideo);
           dockVideo.play().catch(()=>{});
+        } else if (dockVideo.canPlayType('application/vnd.apple.mpegurl')) {
+          dockVideo.src = url; dockVideo.play().catch(()=>{});
         } else {
-          playerError.textContent = 'HLS not supported in this browser.';
-          playerError.classList.remove('hidden');
+          playerError.textContent = 'HLS not supported in this browser.'; playerError.classList.remove('hidden');
         }
       } else {
-        // fallback (e.g., mp4)
-        dockVideo.src = url;
-        dockVideo.play().catch(()=>{});
+        dockVideo.src = url; dockVideo.play().catch(()=>{});
       }
     }
-
     function onTogglePlay(row) {
       const cb = row.querySelector('.play-toggle');
       const key = row.dataset.channelId;
       const url = row.dataset.url;
       const name = row.dataset.name;
-
-      // If checking a new one, uncheck previous
       if (cb.checked) {
         if (selectedKey && selectedKey !== key) {
           document.querySelectorAll(`.epg-row[data-channel-id="${selectedKey}"] .play-toggle`).forEach(t => t.checked = false);
         }
-        selectedKey = key;
-        playUrl(name, url);
+        selectedKey = key; playUrl(name, url);
       } else {
-        // if the one being unchecked is the current, stop
         if (selectedKey === key) stopPlayer();
       }
     }
+    document.getElementById('closePlayer').addEventListener('click', stopPlayer);
 
-    closePlayer.addEventListener('click', stopPlayer);
-
-    /* === Controls === */
+    /* Controls */
     document.querySelectorAll('button[data-span]').forEach(btn => {
       btn.addEventListener('click', () => {
-        document.querySelectorAll('button[data-span]').forEach(b => b.classList.remove('bg-indigo-100'));
-        btn.classList.add('bg-indigo-100');
+        document.querySelectorAll('button[data-span]').forEach(b => b.classList.remove('is-active'));
+        btn.classList.add('is-active');
         hoursSpan = Number(btn.getAttribute('data-span'));
         loadPageAndRender();
       });
@@ -370,6 +499,23 @@
     prevBtn.onclick = () => { if (page > 0) { page--; loadPageAndRender(); } };
     nextBtn.onclick = () => { if (page < totalPages - 1) { page++; loadPageAndRender(); } };
     pageSizeEl.onchange = () => { size = Number(pageSizeEl.value); localStorage.setItem('epgPageSize', size); page = 0; loadPageAndRender(); };
+
+    /* Search */
+    function filterChannels() {
+      const term = searchBox.value.trim().toLowerCase();
+      const rows = document.querySelectorAll('#epgGrid .epg-row');
+      let shown = 0;
+      rows.forEach(r => {
+        const name = (r.dataset.name || '').toLowerCase();
+        const match = term === '' || name.includes(term);
+        r.style.display = match ? 'flex' : 'none';
+        if (match) shown++;
+      });
+      setStatus(term ? `🔍 ${shown} match${shown===1?'':'es'}` : '');
+      clearBtn.classList.toggle('hidden', term === '');
+    }
+    searchBox.addEventListener('input', filterChannels);
+    clearBtn.addEventListener('click', () => { searchBox.value=''; filterChannels(); searchBox.focus(); });
 
     setInterval(() => renderNowLine(), 60_000);
     loadPageAndRender();
