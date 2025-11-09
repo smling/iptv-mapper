@@ -1,5 +1,6 @@
 package io.github.smling.iptv_mapper.models.dao.epg;
 
+import io.github.smling.iptv_mapper.models.dao.AuditEntity;
 import io.github.smling.iptv_mapper.models.dto.epg.Programme;
 import io.github.smling.iptv_mapper.parsers.EPGTimeParser;
 import jakarta.persistence.*;
@@ -9,7 +10,7 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "programme")
-public class ProgrammeEntity {
+public class ProgrammeEntity extends AuditEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)

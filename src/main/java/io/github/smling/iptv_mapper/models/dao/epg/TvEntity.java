@@ -1,5 +1,6 @@
 package io.github.smling.iptv_mapper.models.dao.epg;
 
+import io.github.smling.iptv_mapper.models.dao.AuditEntity;
 import io.github.smling.iptv_mapper.models.dao.DataSourceEntity;
 import io.github.smling.iptv_mapper.models.dto.epg.Tv;
 import jakarta.persistence.*;
@@ -11,7 +12,7 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "tv")
-public class TvEntity {
+public class TvEntity extends AuditEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     UUID id;
@@ -25,19 +26,13 @@ public class TvEntity {
     @JoinColumn(name = "data_source_id")
     DataSourceEntity dataSource;
 
-    @Column(name = "created_at")
-    OffsetDateTime createdAt;
-
-    @Column(name = "updated_at")
-    OffsetDateTime updatedAt;
+    // createdAt / updatedAt inherited from AuditEntity
 
     public static TvEntity of(DataSourceEntity dataSource, Tv tv, Clock clock) {
         return new TvEntity()
                 .setDataSource(dataSource)
-                .setCreatedAt(OffsetDateTime.now(clock))
                 .setGeneratorInfoName(tv.generatorInfoName())
-                .setGeneratorInfoUrl(tv.generatorInfoUrl())
-                ;
+                .setGeneratorInfoUrl(tv.generatorInfoUrl());
     }
 
     public UUID getId() {
@@ -85,21 +80,8 @@ public class TvEntity {
         return this;
     }
 
-    public OffsetDateTime getCreatedAt() {
-        return createdAt;
-    }
-
-    public TvEntity setCreatedAt(OffsetDateTime createdAt) {
-        this.createdAt = createdAt;
-        return this;
-    }
-
-    public OffsetDateTime getUpdatedAt() {
-        return updatedAt;
-    }
-
-    public TvEntity setUpdatedAt(OffsetDateTime updatedAt) {
-        this.updatedAt = updatedAt;
-        return this;
-    }
+    public OffsetDateTime getCreatedAt() { return super.getCreatedAt(); }
+    public TvEntity setCreatedAt(OffsetDateTime createdAt) { super.setCreatedAt(createdAt); return this; }
+    public OffsetDateTime getUpdatedAt() { return super.getUpdatedAt(); }
+    public TvEntity setUpdatedAt(OffsetDateTime updatedAt) { super.setUpdatedAt(updatedAt); return this; }
 }

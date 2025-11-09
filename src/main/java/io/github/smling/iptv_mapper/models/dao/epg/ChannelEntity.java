@@ -1,16 +1,16 @@
 package io.github.smling.iptv_mapper.models.dao.epg;
 
+import io.github.smling.iptv_mapper.models.dao.AuditEntity;
 import jakarta.persistence.*;
 
 import io.github.smling.iptv_mapper.models.dto.epg.Channel;
-import jakarta.persistence.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
 @Entity
 @Table(name = "channel")
-public class ChannelEntity {
+public class ChannelEntity extends AuditEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)

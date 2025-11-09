@@ -1,11 +1,10 @@
 package io.github.smling.iptv_mapper.models.dao.m3u;
 
+import io.github.smling.iptv_mapper.models.dao.AuditEntity;
 import io.github.smling.iptv_mapper.models.dao.DataSourceEntity;
 import io.github.smling.iptv_mapper.models.dto.m3u.M3UPlaylist;
 import jakarta.persistence.*;
-import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
@@ -13,7 +12,7 @@ import java.util.*;
 
 @Entity
 @Table(name = "m3u_playlist")
-public class M3UPlaylistEntity {
+public class M3UPlaylistEntity extends AuditEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -30,13 +29,7 @@ public class M3UPlaylistEntity {
     @JoinColumn(name = "data_source_id", nullable = false)
     private DataSourceEntity dataSource;
 
-    @CreationTimestamp
-    @Column(name = "created_at", updatable = false, nullable = false)
-    private OffsetDateTime createdAt;
-
-    @UpdateTimestamp
-    @Column(name = "updated_at", nullable = false)
-    private OffsetDateTime updatedAt;
+    // createdAt / updatedAt inherited from AuditEntity
 
     // JPA needs this
     protected M3UPlaylistEntity() {}
@@ -65,8 +58,6 @@ public class M3UPlaylistEntity {
     public Map<String, String> getGlobalAttributes() { return globalAttributes; }
     public List<M3UItemEntity> getItems() { return items; }
     public DataSourceEntity getDataSource() { return dataSource; }
-    public OffsetDateTime getCreatedAt() { return createdAt; }
-    public OffsetDateTime getUpdatedAt() { return updatedAt; }
 
     public M3UPlaylistEntity setId(UUID id) {
         this.id = id;
@@ -85,16 +76,6 @@ public class M3UPlaylistEntity {
 
     public M3UPlaylistEntity setDataSource(DataSourceEntity dataSource) {
         this.dataSource = dataSource;
-        return this;
-    }
-
-    public M3UPlaylistEntity setCreatedAt(OffsetDateTime createdAt) {
-        this.createdAt = createdAt;
-        return this;
-    }
-
-    public M3UPlaylistEntity setUpdatedAt(OffsetDateTime updatedAt) {
-        this.updatedAt = updatedAt;
         return this;
     }
 

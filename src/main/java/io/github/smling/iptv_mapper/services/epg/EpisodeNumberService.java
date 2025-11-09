@@ -39,10 +39,10 @@ public class EpisodeNumberService implements CRUDService<EpisodeNumberEntity> {
     public EpisodeNumberEntity update(UUID id, EpisodeNumberEntity u) {
         var e = get(id);
         return repo.save(new EpisodeNumberEntity(
-                e.id(),
-                u.programme() != null ? u.programme() : e.programme(),
-                u.system() != null ? u.system() : e.system(),
-                u.value() != null ? u.value() : e.value()
+                e.getId(),
+                u.getProgramme() != null ? u.getProgramme() : e.getProgramme(),
+                u.getSystem() != null ? u.getSystem() : e.getSystem(),
+                u.getValue() != null ? u.getValue() : e.getValue()
         ));
     }
 

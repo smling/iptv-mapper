@@ -100,16 +100,12 @@ public class M3UService extends IngestService {
             }
 
             // Optionally: update DS lastFetchedAt, lastHttpStatus, checksum, etc.
-            var updatedDs = new DataSourceEntity(
-                    ds.getId(), ds.getType(), ds.getUrl(), ds.getLabel(), ds.getCountryCode(),
-                    ds.isEnabled(), ds.getPriority(), ds.getNotes(),
-                    200,                              // lastHttpStatus (best-effort)
-                    now,                              // lastFetchedAt
-                    ds.getLastEtag(), ds.getLastModifiedHdr(), ds.getContentChecksum(),
-                    ds.getCreatedAt(),
-                    now
-            );
-            dataSourceRepo.save(updatedDs);
+            ds.setLastHttpStatus(200)
+              .setLastFetchedAt(now)
+              .setLastEtag(ds.getLastEtag())
+              .setLastModifiedHdr(ds.getLastModifiedHdr())
+              .setContentChecksum(ds.getContentChecksum());
+            dataSourceRepo.save(ds);
 
         } catch (IOException | InterruptedException e) {
             Thread.currentThread().interrupt(); // safe no-op if not interrupted
@@ -117,16 +113,12 @@ public class M3UService extends IngestService {
             var failNow = OffsetDateTime.now(clock);
 
             // Optionally: update DS lastFetchedAt, lastHttpStatus, checksum, etc.
-            var failedDs = new DataSourceEntity(
-                    ds.getId(), ds.getType(), ds.getUrl(), ds.getLabel(), ds.getCountryCode(),
-                    ds.isEnabled(), ds.getPriority(), ds.getNotes(),
-                    599,                              // lastHttpStatus (best-effort)
-                    failNow,                              // lastFetchedAt
-                    ds.getLastEtag(), ds.getLastModifiedHdr(), ds.getContentChecksum(),
-                    ds.getCreatedAt(),
-                    failNow
-            );
-            dataSourceRepo.save(failedDs);
+            ds.setLastHttpStatus(599)
+              .setLastFetchedAt(failNow)
+              .setLastEtag(ds.getLastEtag())
+              .setLastModifiedHdr(ds.getLastModifiedHdr())
+              .setContentChecksum(ds.getContentChecksum());
+            dataSourceRepo.save(ds);
             throw new IllegalStateException("Failed to fetch M3U for " + ds.getUrl(), e);
         }
     }

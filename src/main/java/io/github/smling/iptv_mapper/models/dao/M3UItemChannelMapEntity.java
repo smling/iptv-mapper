@@ -9,7 +9,7 @@ import java.util.UUID;
 @Entity
 @Table(name = "m3u_item_channel_map",
         uniqueConstraints = @UniqueConstraint(name = "uq_item_unique", columnNames = "m3u_item_id"))
-public class M3UItemChannelMapEntity {
+public class M3UItemChannelMapEntity extends AuditEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -31,11 +31,7 @@ public class M3UItemChannelMapEntity {
 
     private String method;                     // "jaroWinkler"/"cosine"/"admin"
 
-    @Column(name = "created_at", nullable = false)
-    private java.time.OffsetDateTime createdAt;
-
-    @Column(name = "updated_at", nullable = false)
-    private java.time.OffsetDateTime updatedAt;
+    // createdAt / updatedAt inherited from AuditEntity
 
     protected M3UItemChannelMapEntity() {}
 
@@ -48,8 +44,8 @@ public class M3UItemChannelMapEntity {
         e.manual = false;
         e.confidence = java.math.BigDecimal.valueOf(score);
         e.method = method;
-        e.createdAt = now;
-        e.updatedAt = now;
+        e.setCreatedAt(now);
+        e.setUpdatedAt(now);
         return e;
     }
 
@@ -61,8 +57,8 @@ public class M3UItemChannelMapEntity {
         e.channel = channel;
         e.manual = true;
         e.method = noteOrMethod != null ? noteOrMethod : "admin";
-        e.createdAt = now;
-        e.updatedAt = now;
+        e.setCreatedAt(now);
+        e.setUpdatedAt(now);
         return e;
     }
 
@@ -73,8 +69,8 @@ public class M3UItemChannelMapEntity {
     public boolean isManual() { return manual; }
     public java.math.BigDecimal getConfidence() { return confidence; }
     public String getMethod() { return method; }
-    public java.time.OffsetDateTime getCreatedAt() { return createdAt; }
-    public java.time.OffsetDateTime getUpdatedAt() { return updatedAt; }
-    public void setUpdatedAt(java.time.OffsetDateTime updatedAt) { this.updatedAt = updatedAt; }
+    public java.time.OffsetDateTime getCreatedAt() { return super.getCreatedAt(); }
+    public java.time.OffsetDateTime getUpdatedAt() { return super.getUpdatedAt(); }
+    public void setUpdatedAt(java.time.OffsetDateTime updatedAt) { super.setUpdatedAt(updatedAt); }
     public void setChannel(ChannelEntity channel) { this.channel = channel; } // allow manual re-point
 }
