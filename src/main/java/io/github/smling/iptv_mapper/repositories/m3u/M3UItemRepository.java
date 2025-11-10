@@ -49,4 +49,16 @@ public interface M3UItemRepository extends JpaRepository<M3UItemEntity, UUID> {
         ORDER BY tvgName
         """, nativeQuery = true)
     List<M3UPlaylistLineView> findPlaylistLinesAll();
+
+    /**
+     * Fetch all M3U items that currently have no mapping (manual or auto).
+     */
+    @Query("""
+        select i
+          from M3UItemEntity i
+          left join io.github.smling.iptv_mapper.models.dao.M3UItemChannelMapEntity m
+                 on m.item = i
+         where m is null
+        """)
+    List<M3UItemEntity> findAllUnmapped();
 }

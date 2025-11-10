@@ -5,7 +5,6 @@ import jakarta.persistence.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
-import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.Optional;
 import java.util.UUID;
@@ -18,7 +17,7 @@ import java.util.UUID;
                 columnNames = {"type", "url"}
         )
 )
-public class DataSourceEntity {
+public class DataSourceEntity extends AuditEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -52,11 +51,7 @@ public class DataSourceEntity {
     private String lastModifiedHdr;
     private String contentChecksum;
 
-    @Column(nullable = false)
-    private OffsetDateTime createdAt;
-
-    @Column(nullable = false)
-    private OffsetDateTime updatedAt;
+    // createdAt / updatedAt inherited from AuditEntity
 
     public UUID getId() {
         return id;
@@ -175,23 +170,7 @@ public class DataSourceEntity {
         return this;
     }
 
-    public OffsetDateTime getCreatedAt() {
-        return createdAt;
-    }
-
-    public DataSourceEntity setCreatedAt(OffsetDateTime createdAt) {
-        this.createdAt = createdAt;
-        return this;
-    }
-
-    public OffsetDateTime getUpdatedAt() {
-        return updatedAt;
-    }
-
-    public DataSourceEntity setUpdatedAt(OffsetDateTime updatedAt) {
-        this.updatedAt = updatedAt;
-        return this;
-    }
+    // getCreatedAt / getUpdatedAt provided by AuditEntity
 
     /**
      * Required by JPA.
@@ -213,13 +192,8 @@ public class DataSourceEntity {
             OffsetDateTime lastFetchedAt,
             String lastEtag,
             String lastModifiedHdr,
-            String contentChecksum,
-            OffsetDateTime createdAt,
-            OffsetDateTime updatedAt
+            String contentChecksum
     ) {
-        if (createdAt == null || updatedAt == null) {
-            throw new IllegalArgumentException("createdAt and updatedAt must be provided");
-        }
         this.id = id;
         this.type = type;
         this.url = url;
@@ -233,8 +207,6 @@ public class DataSourceEntity {
         this.lastEtag = lastEtag;
         this.lastModifiedHdr = lastModifiedHdr;
         this.contentChecksum = contentChecksum;
-        this.createdAt = createdAt;
-        this.updatedAt = updatedAt;
     }
 
     // --- Factory Methods ---
@@ -255,16 +227,13 @@ public class DataSourceEntity {
             OffsetDateTime lastFetchedAt,
             String lastEtag,
             String lastModifiedHdr,
-            String contentChecksum,
-            OffsetDateTime createdAt,
-            OffsetDateTime updatedAt
+            String contentChecksum
     ) {
         return new DataSourceEntity(
                 id, type, url, label, countryCode,
                 enabled, priority, notes,
                 lastHttpStatus, lastFetchedAt,
-                lastEtag, lastModifiedHdr, contentChecksum,
-                createdAt, updatedAt
+                lastEtag, lastModifiedHdr, contentChecksum
         );
     }
 }

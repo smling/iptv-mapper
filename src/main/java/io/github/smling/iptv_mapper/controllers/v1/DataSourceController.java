@@ -1,6 +1,7 @@
 package io.github.smling.iptv_mapper.controllers.v1;
 
 import io.github.smling.iptv_mapper.models.dao.DataSourceEntity;
+import io.github.smling.iptv_mapper.models.dto.common.PageDto;
 import io.github.smling.iptv_mapper.services.DataSourceService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -9,7 +10,6 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.persistence.EntityNotFoundException;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -40,12 +40,12 @@ public class DataSourceController extends BaseApiV1Controller {
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "List retrieved successfully",
                     content = @Content(mediaType = "application/json",
-                            schema = @Schema(implementation = Page.class)))
+                            schema = @Schema(implementation = PageDto.Response.class)))
     })
     @GetMapping
-    public ResponseEntity<Page<DataSourceEntity>> list(Pageable pageable) {
-        Page<DataSourceEntity> page = service.list(pageable);
-        return ResponseEntity.ok(page);
+    public ResponseEntity<PageDto.Response<DataSourceEntity>> list(Pageable pageable) {
+        var page = service.list(pageable);
+        return ResponseEntity.ok(PageDto.Response.of(page));
     }
 
     /**

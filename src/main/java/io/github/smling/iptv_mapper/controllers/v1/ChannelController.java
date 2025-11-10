@@ -1,8 +1,8 @@
 package io.github.smling.iptv_mapper.controllers.v1;
 
 import io.github.smling.iptv_mapper.models.dto.epg.ChannelProgrammeView;
+import io.github.smling.iptv_mapper.models.dto.common.PageDto;
 import io.github.smling.iptv_mapper.services.epg.ChannelService;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.web.bind.annotation.*;
@@ -20,10 +20,10 @@ public class ChannelController {
     }
 
     @GetMapping("/{channelDbId}/programmes")
-    public Page<ChannelProgrammeView> getProgrammesByChannelDbId(
+    public PageDto.Response<ChannelProgrammeView> getProgrammesByChannelDbId(
             @PathVariable UUID channelDbId,
             @PageableDefault(size = 100, sort = "startTime") Pageable pageable
     ) {
-        return service.listByChannelDbId(channelDbId, pageable);
+        return PageDto.Response.of(service.listByChannelDbId(channelDbId, pageable));
     }
 }

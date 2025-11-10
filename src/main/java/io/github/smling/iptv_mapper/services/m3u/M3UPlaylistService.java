@@ -27,8 +27,8 @@ public class M3UPlaylistService implements CRUDService<M3UPlaylistEntity> {
     @Override
     public M3UPlaylistEntity create(M3UPlaylistEntity toCreate) {
         var now = OffsetDateTime.now(clock);
-        toCreate.setCreatedAt(now)
-                .setUpdatedAt(now);
+        toCreate.setCreatedAt(now);
+        toCreate.setUpdatedAt(now);
         return repo.save(toCreate);
     }
 

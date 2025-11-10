@@ -1,9 +1,9 @@
 package io.github.smling.iptv_mapper.controllers.v1;
 
 import io.github.smling.iptv_mapper.models.dto.m3u.M3UItemChannelView;
+import io.github.smling.iptv_mapper.models.dto.common.PageDto;
 import io.github.smling.iptv_mapper.services.m3u.M3UService;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpHeaders;
@@ -37,8 +37,8 @@ public class M3UController {
     }
 
     @GetMapping("/mappings/channel")
-    public Page<M3UItemChannelView> getMappings(
+    public PageDto.Response<M3UItemChannelView> getMappings(
             @PageableDefault(size = 50, sort = "mapId") Pageable pageable) {
-        return m3UService.list(pageable);
+        return PageDto.Response.of(m3UService.list(pageable));
     }
 }

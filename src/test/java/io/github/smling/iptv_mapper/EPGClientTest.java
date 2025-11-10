@@ -13,6 +13,9 @@ import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+
+@EnabledIfEnvironmentVariable(named = "ENABLE_NETWORK_TESTS", matches = "(?i)true|1|yes")
 class EPGClientTest {
     private static final URI XML_URL = URI.create("https://www.open-epg.com/files/hongkong1.xml");
     private static final URI GZ_URL  = URI.create("https://www.open-epg.com/files/hongkong1.xml.gz");

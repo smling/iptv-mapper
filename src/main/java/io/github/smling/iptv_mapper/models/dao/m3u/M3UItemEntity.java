@@ -1,5 +1,6 @@
 package io.github.smling.iptv_mapper.models.dao.m3u;
 
+import io.github.smling.iptv_mapper.models.dao.AuditEntity;
 import io.github.smling.iptv_mapper.models.dto.m3u.M3UItem;
 import jakarta.persistence.*;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -11,17 +12,11 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
-import io.github.smling.iptv_mapper.models.dto.m3u.M3UItem;
-import jakarta.persistence.*;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
-
-import java.time.Duration;
 import java.util.*;
 
 @Entity
 @Table(name = "m3u_item")
-public class M3UItemEntity {
+public class M3UItemEntity extends AuditEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
