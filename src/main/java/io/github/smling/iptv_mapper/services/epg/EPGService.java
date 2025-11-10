@@ -26,15 +26,22 @@ import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.InetAddress;
 import java.net.URI;
 import java.net.UnknownHostException;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Map;
+import javax.xml.stream.XMLInputFactory;
+import javax.xml.stream.XMLStreamConstants;
+import javax.xml.stream.XMLStreamException;
+import javax.xml.stream.XMLStreamReader;
 
 @Service
 public class EPGService extends IngestService {
@@ -75,32 +82,132 @@ public class EPGService extends IngestService {
             return; // do not attempt fetch if not reachable
         }
 
-        try {
-            Tv tv = new EPGClient().fetchEpg(requestUri);
-            logger.info("EPG source [{}] fetched {} channels.", ds.getUrl(), tv.channels().size());
-            Optional<TvEntity> existing = tvRepository
-                    .findByGeneratorInfoNameAndGeneratorInfoUrl(tv.generatorInfoName(), tv.generatorInfoUrl());
-
-            TvEntity tvEntity;
-            if (existing.isPresent()) {
-                tvEntity = existing.get();
-                logger.debug("Reusing existing TvEntity id={} (generator='{}', url='{}')",
-                        tvEntity.getId(), tv.generatorInfoName(), tv.generatorInfoUrl());
-            } else {
-                logger.debug("Creating new TvEntity (generator='{}', url='{}')",
-                        tv.generatorInfoName(), tv.generatorInfoUrl());
-                tvEntity = tvRepository.save(TvEntity.of(ds, tv, clock));
-            }
-
-            // Upsert channels and programmes for this TV
-            upsertChannelsAndProgrammes(tv, tvEntity);
-
+        try (InputStream in = new EPGClient().openXmlStream(requestUri)) {
+            streamIngest(in, ds);
         } catch(InterruptedException e) {
             Thread.currentThread().interrupt();
             logger.error("Interrupted while fetching {}", requestUri, e);
         } catch(IOException e) {
             logger.error("I/O error occurred while fetching {}", requestUri, e);
         }
+    }
+
+    private void streamIngest(InputStream in, DataSourceEntity ds) {
+        XMLInputFactory f = XMLInputFactory.newFactory();
+        XMLStreamReader r = null;
+        try {
+            r = f.createXMLStreamReader(in);
+
+            TvEntity tvEntity = null;
+            String tvGenName = null;
+            String tvGenUrl = null;
+            Map<String, ChannelEntity> channelCache = new HashMap<>();
+
+            while (r.hasNext()) {
+                int ev = r.next();
+                if (ev != XMLStreamConstants.START_ELEMENT) continue;
+                String name = r.getLocalName();
+
+                if ("tv".equals(name)) {
+                    tvGenName = attr(r, "generator-info-name");
+                    tvGenUrl  = attr(r, "generator-info-url");
+                    Optional<TvEntity> existing = tvRepository
+                            .findByGeneratorInfoNameAndGeneratorInfoUrl(tvGenName, tvGenUrl);
+                    if (existing.isPresent()) {
+                        tvEntity = existing.get();
+                    } else {
+                        tvEntity = tvRepository.save(TvEntity.of(ds, new Tv(tvGenName, tvGenUrl, List.of(), List.of()), clock));
+                    }
+                } else if ("channel".equals(name)) {
+                    if (tvEntity == null) continue; // safeguard
+                    String chId = attr(r, "id");
+                    String displayName = null;
+                    // descend until end of channel
+                    while (r.hasNext()) {
+                        int inner = r.next();
+                        if (inner == XMLStreamConstants.START_ELEMENT && "display-name".equals(r.getLocalName())) {
+                            displayName = text(r);
+                        } else if (inner == XMLStreamConstants.END_ELEMENT && "channel".equals(r.getLocalName())) {
+                            break;
+                        }
+                    }
+                    TvEntity finalTvEntity = tvEntity;
+                    String finalDisplayName = displayName;
+                    ChannelEntity chEntity = channelRepository.findByTv_IdAndChannelId(tvEntity.getId(), chId)
+                            .or(() -> channelRepository.findByChannelId(chId))
+                            .orElseGet(() -> channelRepository.save(ChannelEntity.of(finalTvEntity, new Channel(chId, finalDisplayName))));
+                    if (!Objects.equals(chEntity.getDisplayName(), displayName) && displayName != null) {
+                        chEntity.setDisplayName(displayName);
+                        channelRepository.save(chEntity);
+                    }
+                    channelCache.put(chId, chEntity);
+                } else if ("programme".equals(name)) {
+                    String start = attr(r, "start");
+                    String stop  = attr(r, "stop");
+                    String chRef = attr(r, "channel");
+                    String title = null;
+                    String desc  = null;
+
+                    while (r.hasNext()) {
+                        int inner = r.next();
+                        if (inner == XMLStreamConstants.START_ELEMENT) {
+                            String ln = r.getLocalName();
+                            if ("title".equals(ln)) { title = text(r); }
+                            else if ("desc".equals(ln)) { desc = text(r); }
+                        } else if (inner == XMLStreamConstants.END_ELEMENT && "programme".equals(r.getLocalName())) {
+                            break;
+                        }
+                    }
+
+                    ChannelEntity chEntity = channelCache.get(chRef);
+                    if (chEntity == null && tvEntity != null) {
+                        chEntity = channelRepository.findByTv_IdAndChannelId(tvEntity.getId(), chRef)
+                                .or(() -> channelRepository.findByChannelId(chRef))
+                                .orElse(null);
+                        if (chEntity != null) channelCache.put(chRef, chEntity);
+                    }
+                    if (chEntity == null) continue; // no channel mapping
+
+                    var startTs = EPGTimeParser.parse(start);
+                    var stopTs  = EPGTimeParser.parse(stop);
+                    var existingProg = programmeRepository
+                            .findByChannel_IdAndStartTimeAndStopTime(chEntity.getId(), startTs, stopTs);
+
+                    if (existingProg.isPresent()) {
+                        var prog = existingProg.get();
+                        boolean changed = false;
+                        if (!Objects.equals(prog.getTitle(), title)) { prog.setTitle(title); changed = true; }
+                        if (!Objects.equals(prog.getDescription(), desc)) { prog.setDescription(desc); changed = true; }
+                        if (changed) programmeRepository.save(prog);
+                    } else {
+                        programmeRepository.save(ProgrammeEntity.of(chEntity,
+                                new Programme(start, stop, chRef, title, desc)));
+                    }
+                }
+            }
+        } catch (XMLStreamException e) {
+            throw new IllegalStateException("Failed to parse EPG stream", e);
+        } finally {
+            if (r != null) try { r.close(); } catch (Exception ignored) {}
+        }
+    }
+
+    private static String attr(XMLStreamReader r, String name) {
+        String v = r.getAttributeValue(null, name);
+        return v != null ? v : "";
+    }
+
+    private static String text(XMLStreamReader r) throws XMLStreamException {
+        StringBuilder sb = new StringBuilder();
+        while (r.hasNext()) {
+            int ev = r.next();
+            if (ev == XMLStreamConstants.CHARACTERS || ev == XMLStreamConstants.CDATA) {
+                sb.append(r.getText());
+            } else if (ev == XMLStreamConstants.END_ELEMENT) {
+                break;
+            }
+        }
+        return sb.toString();
     }
 
     private void upsertChannelsAndProgrammes(Tv tv, TvEntity tvEntity) {
