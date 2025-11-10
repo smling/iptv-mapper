@@ -190,12 +190,12 @@ public class EPGService extends IngestService {
         var end   = (to == null ? nowUtc.plusHours(24) : to.withOffsetSameInstant(ZoneOffset.UTC));
 
         // 1) Channels → DTO
-        var channels = channelRepository.findAllChannelsWithMappingId().parallelStream()
+        var channels = channelRepository.findAllChannelsWithMappingId().stream()
                 .map(c -> new Channel(c.getXmltvId(), c.getDisplayName()))
                 .toList();
 
         // 2) Programmes → DTO (format timestamps as "yyyyMMddHHmmss +0000")
-        var progs = programmeRepository.findProgrammesBetween(start, end).parallelStream()
+        var progs = programmeRepository.findProgrammesBetween(start, end).stream()
                 .map(p -> new Programme(
                         EPGTimeParser.toIsoInstantString(p.getStartUtc()),
                         EPGTimeParser.toIsoInstantString(p.getStopUtc()),
@@ -217,6 +217,39 @@ public class EPGService extends IngestService {
             return XmlMapperFactory.ofEPG().writeValueAsString(tv);
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("Failed to serialize XMLTV", e);
+        }
+    }
+
+    public void generateTo(java.io.OutputStream out, OffsetDateTime from, OffsetDateTime to) {
+        var nowUtc = OffsetDateTime.now(clock).withOffsetSameInstant(ZoneOffset.UTC);
+        var start = (from == null ? nowUtc : from.withOffsetSameInstant(ZoneOffset.UTC));
+        var end   = (to == null ? nowUtc.plusHours(24) : to.withOffsetSameInstant(ZoneOffset.UTC));
+
+        var channels = channelRepository.findAllChannelsWithMappingId().stream()
+                .map(c -> new Channel(c.getXmltvId(), c.getDisplayName()))
+                .toList();
+
+        var progs = programmeRepository.findProgrammesBetween(start, end).stream()
+                .map(p -> new Programme(
+                        EPGTimeParser.toIsoInstantString(p.getStartUtc()),
+                        EPGTimeParser.toIsoInstantString(p.getStopUtc()),
+                        p.getChannelXmltvId(),
+                        StringUtil.nullSafe(p.getTitle()),
+                        StringUtil.nullSafe(p.getDesc())
+                ))
+                .toList();
+
+        var tv = new Tv(
+                appName,
+                getGeneratorInfoUrl(),
+                channels,
+                progs
+        );
+
+        try {
+            XmlMapperFactory.ofEPG().writeValue(out, tv);
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to stream XMLTV", e);
         }
     }
 
