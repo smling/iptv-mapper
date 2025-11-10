@@ -82,8 +82,8 @@ public class M3UService extends IngestService {
 
             String json = objectMapper.writeValueAsString(playlist.globalAttributes());
             M3UPlaylistEntity playlistEntity = playlistRepo.findByGlobalAttributes(json)
-                    .orElse(M3UPlaylistEntity.of(ds, playlist))
-                    .setUpdatedAt(now);
+                    .orElse(M3UPlaylistEntity.of(ds, playlist));
+            playlistEntity.setUpdatedAt(now);
             M3UPlaylistEntity savedPaylistEntity = playlistRepo.save(playlistEntity);
             List<M3UItemEntity> validItems = getValidItems(playlist.items())
                     .stream()

@@ -13,6 +13,9 @@ import java.util.stream.Stream;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+
+@EnabledIfEnvironmentVariable(named = "ENABLE_NETWORK_TESTS", matches = "(?i)true|1|yes")
 class M3UClientTest {
 
     static Stream<URI> urlProvider() {

@@ -81,7 +81,5 @@ public class TvEntity extends AuditEntity {
     }
 
     public OffsetDateTime getCreatedAt() { return super.getCreatedAt(); }
-    public TvEntity setCreatedAt(OffsetDateTime createdAt) { super.setCreatedAt(createdAt); return this; }
     public OffsetDateTime getUpdatedAt() { return super.getUpdatedAt(); }
-    public TvEntity setUpdatedAt(OffsetDateTime updatedAt) { super.setUpdatedAt(updatedAt); return this; }
 }
