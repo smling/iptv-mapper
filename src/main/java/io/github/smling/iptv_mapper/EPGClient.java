@@ -126,4 +126,30 @@ public class EPGClient {
         log.debug("🧮 Derived XML name from GZIP: {} -> {}", file, derived);
         return derived;
     }
+
+    /**
+     * Open an InputStream to the EPG XML for streaming consumption.
+     * Caller is responsible for closing the returned stream.
+     */
+    public InputStream openXmlStream(URI url) throws IOException, InterruptedException {
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(url)
+                .timeout(Duration.ofSeconds(HTTP_REQUEST_TIMEOUT_IN_SECOND))
+                .GET()
+                .build();
+
+        Instant start = Instant.now();
+        log.debug("🌐 Opening XML stream to {}", url);
+
+        HttpResponse<InputStream> response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
+        long duration = Duration.between(start, Instant.now()).toMillis();
+        log.debug("📥 XML stream from {} - status: {}, took {} ms",
+                url, response.statusCode(), duration);
+
+        if (response.statusCode() != 200) {
+            throw new IOException("Failed to open EPG stream (XML), HTTP " + response.statusCode());
+        }
+
+        return response.body();
+    }
 }

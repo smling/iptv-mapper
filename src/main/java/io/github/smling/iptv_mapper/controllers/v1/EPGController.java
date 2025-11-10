@@ -5,6 +5,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -23,14 +24,14 @@ public class EPGController {
     }
 
     @GetMapping(produces = "application/xml; charset=UTF-8")
-    public ResponseEntity<String> epg(
+    public ResponseEntity<StreamingResponseBody> epg(
             @RequestParam(required = false) OffsetDateTime from,
             @RequestParam(required = false) OffsetDateTime to
     ) {
-        var body = service.generate(from, to);
+        StreamingResponseBody stream = out -> service.generateTo(out, from, to);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"epg.xml\"")
                 .contentType(MediaType.APPLICATION_XML)
-                .body(body);
+                .body(stream);
     }
 }
