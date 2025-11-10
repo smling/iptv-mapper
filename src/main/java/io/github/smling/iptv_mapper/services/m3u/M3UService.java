@@ -3,6 +3,7 @@ package io.github.smling.iptv_mapper.services.m3u;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.smling.iptv_mapper.M3UClient;
 import io.github.smling.iptv_mapper.UriChecker;
+import io.github.smling.iptv_mapper.Reachability;
 import io.github.smling.iptv_mapper.models.DataSourceType;
 import io.github.smling.iptv_mapper.models.dao.DataSourceEntity;
 import io.github.smling.iptv_mapper.models.dao.m3u.M3UItemEntity;
@@ -126,7 +127,7 @@ public class M3UService extends IngestService {
     public List<M3UItem> getValidItems(List<M3UItem> items) {
         if (items == null || items.isEmpty()) return List.of();
         return items.parallelStream() // parallel execution
-                .map(item -> new UriChecker().isUrlReachable(item.url()) ? item : null)
+                .map(item -> new UriChecker().isReachable(item.url()) == Reachability.Reachable ? item : null)
                 .filter(Objects::nonNull)
                 .toList();
     }

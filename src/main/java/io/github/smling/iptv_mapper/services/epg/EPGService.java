@@ -34,6 +34,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 @Service
 public class EPGService extends IngestService {
@@ -76,15 +77,80 @@ public class EPGService extends IngestService {
         try {
             Tv tv = new EPGClient().fetchEpg(requestUri);
             logger.info("EPG source [{}] fetched {} channels.", ds.getUrl(), tv.channels().size());
-            TvEntity tvEntity = TvEntity.of(ds, tv, clock)
-                    ;
-            TvEntity savedTvEntity = tvRepository.save(tvEntity);
-            savedTvEntity.setChannels(ingestChannel(tv, savedTvEntity));
-            tvRepository.save(savedTvEntity);
+            Optional<TvEntity> existing = tvRepository
+                    .findByGeneratorInfoNameAndGeneratorInfoUrl(tv.generatorInfoName(), tv.generatorInfoUrl());
+
+            TvEntity tvEntity;
+            if (existing.isPresent()) {
+                tvEntity = existing.get();
+                logger.debug("Reusing existing TvEntity id={} (generator='{}', url='{}')",
+                        tvEntity.getId(), tv.generatorInfoName(), tv.generatorInfoUrl());
+            } else {
+                logger.debug("Creating new TvEntity (generator='{}', url='{}')",
+                        tv.generatorInfoName(), tv.generatorInfoUrl());
+                tvEntity = tvRepository.save(TvEntity.of(ds, tv, clock));
+            }
+
+            // Upsert channels and programmes for this TV
+            upsertChannelsAndProgrammes(tv, tvEntity);
 
         } catch(InterruptedException | IOException e) {
             logger.error("Error occurred on fetching {}", requestUri);
         }
+    }
+
+    private void upsertChannelsAndProgrammes(Tv tv, TvEntity tvEntity) {
+        if(tv.channels().isEmpty()) return;
+        var channels = tv.channels();
+        channels.parallelStream().forEach(chDto -> {
+            // Upsert Channel by (tv, channelId)
+            var existingCh = channelRepository.findByTv_IdAndChannelId(tvEntity.getId(), chDto.id())
+                    .or(() -> channelRepository.findByChannelId(chDto.id()));
+
+            ChannelEntity chEntity;
+            if (existingCh.isPresent()) {
+                chEntity = existingCh.get();
+                if (!Objects.equals(chEntity.getDisplayName(), chDto.displayName())) {
+                    chEntity.setDisplayName(chDto.displayName());
+                    channelRepository.save(chEntity);
+                }
+            } else {
+                chEntity = channelRepository.save(ChannelEntity.of(tvEntity, chDto));
+            }
+
+            // Upsert Programmes for this channel
+            upsertProgrammesForChannel(chDto, chEntity, tv.programmes());
+        });
+    }
+
+    private void upsertProgrammesForChannel(io.github.smling.iptv_mapper.models.dto.epg.Channel chDto,
+                                            ChannelEntity chEntity,
+                                            java.util.List<Programme> allProgrammes) {
+        if(allProgrammes == null || allProgrammes.isEmpty()) return;
+        allProgrammes.parallelStream()
+                .filter(p -> Objects.equals(chDto.id(), p.channel()))
+                .forEach(p -> {
+                    var start = EPGTimeParser.parse(p.start());
+                    var stop  = EPGTimeParser.parse(p.stop());
+                    var existingProg = programmeRepository
+                            .findByChannel_IdAndStartTimeAndStopTime(chEntity.getId(), start, stop);
+
+                    if (existingProg.isPresent()) {
+                        var prog = existingProg.get();
+                        boolean changed = false;
+                        if (!Objects.equals(prog.getTitle(), p.title())) {
+                            prog.setTitle(p.title());
+                            changed = true;
+                        }
+                        if (!Objects.equals(prog.getDescription(), p.desc())) {
+                            prog.setDescription(p.desc());
+                            changed = true;
+                        }
+                        if (changed) programmeRepository.save(prog);
+                    } else {
+                        programmeRepository.save(ProgrammeEntity.of(chEntity, p));
+                    }
+                });
     }
 
     protected List<ChannelEntity> ingestChannel(Tv tv, TvEntity tvEntity) {
