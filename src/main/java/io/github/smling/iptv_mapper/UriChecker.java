@@ -1,21 +1,20 @@
 package io.github.smling.iptv_mapper;
 
-import io.github.smling.iptv_mapper.factories.HttpClientFactory;
 import io.github.smling.iptv_mapper.factories.RtspSocketFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
-import java.net.*;
-import java.net.http.*;
+import java.net.Socket;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
-import javax.net.ssl.SSLSocket;
-import javax.net.ssl.SSLSocketFactory;
 
 public class UriChecker {
 
@@ -37,10 +36,34 @@ public class UriChecker {
     }
 
     public UriChecker() {
-        this(HttpClientFactory.of(),
+        this(buildLowPriorityHttpClient(),
                 Duration.ofSeconds(7),
                 HttpClient.Version.HTTP_1_1,
-                ForkJoinPool.commonPool());
+                LOW_PRIORITY_EXECUTOR);
+    }
+
+    // Low-priority thread setup to de-prioritize health checks vs. normal traffic
+    private static final ExecutorService LOW_PRIORITY_EXECUTOR = new ThreadPoolExecutor(
+            2, 4,
+            30L, TimeUnit.SECONDS,
+            new LinkedBlockingQueue<>(128),
+            r -> {
+                Thread t = new Thread(r);
+                t.setName("uri-checker-lp-" + t.threadId());
+                t.setDaemon(true);
+                t.setPriority(Math.max(Thread.NORM_PRIORITY - 2, Thread.MIN_PRIORITY));
+                return t;
+            },
+            new ThreadPoolExecutor.CallerRunsPolicy()
+    );
+
+    private static HttpClient buildLowPriorityHttpClient() {
+        return HttpClient.newBuilder()
+                .executor(LOW_PRIORITY_EXECUTOR)
+                .connectTimeout(Duration.ofSeconds(5))
+                .followRedirects(HttpClient.Redirect.NORMAL)
+                .version(HttpClient.Version.HTTP_2)
+                .build();
     }
 
     /** Async health check for http(s) and rts(p)s returning Reachability. */
@@ -79,27 +102,38 @@ public class UriChecker {
     // ---------- HTTP path (sendAsync) ----------
 
     private CompletableFuture<Reachability> checkHttpAsync(URI uri) {
-        return sendAsyncStatus(uri, "GET")
-                .thenCompose(code -> {
-                    if (code == 405 || code >= 400) {
-                        return sendAsyncStatus(uri, "HEAD");
+        // Prefer HEAD first to minimize payload; fallback to GET only if HEAD unsupported
+        return sendAsyncStatus(uri, "HEAD")
+                .thenCompose(headCode -> {
+                    if (isHttpOk200(headCode)) {
+                        log.debug("✅ [{}] → HTTP-HEAD {} → reachable", uri, headCode);
+                        return CompletableFuture.completedFuture(Reachability.Reachable);
                     }
-                    return CompletableFuture.completedFuture(code);
+                    if (headCode == 405 || headCode == 501) {
+                        return sendAsyncStatus(uri, "GET")
+                                .handle((getCode, getErr) -> {
+                                    if (getErr != null) {
+                                        String msg = (getErr instanceof CompletionException && getErr.getCause() != null)
+                                                ? getErr.getCause().toString() : getErr.toString();
+                                        log.debug("❌ [{}] → GET exception: {} → unreachable", uri, msg);
+                                        return Reachability.Unreachable;
+                                    }
+                                    if (isHttpOk200(getCode)) {
+                                        log.debug("✅ [{}] → HTTP-GET {} → reachable", uri, getCode);
+                                        return Reachability.Reachable;
+                                    } else {
+                                        log.debug("❌ [{}] → HTTP-GET {} → inaccessable", uri, getCode);
+                                        return Reachability.Inaccessable;
+                                    }
+                                });
+                    }
+                    log.debug("❌ [{}] → HTTP-HEAD {} → inaccessable", uri, headCode);
+                    return CompletableFuture.completedFuture(Reachability.Inaccessable);
                 })
-                .handle((code, err) -> {
-                    if (err != null) {
-                        String msg = (err instanceof CompletionException && err.getCause() != null)
-                                ? err.getCause().toString() : err.toString();
-                        log.debug("❌ [{}] → exception: {} → unreachable", uri, msg);
-                        return Reachability.Unreachable;
-                    }
-                    if (isHttpOk200(code)) {
-                        log.debug("✅ [{}] → HTTP {} → reachable", uri, code);
-                        return Reachability.Reachable;
-                    } else {
-                        log.debug("❌ [{}] → HTTP {} → inaccessable", uri, code);
-                        return Reachability.Inaccessable;
-                    }
+                .exceptionally(err -> {
+                    String msg = (err.getCause() != null) ? err.getCause().toString() : err.toString();
+                    log.debug("❌ [{}] → HEAD exception: {} → unreachable", uri, msg);
+                    return Reachability.Unreachable;
                 });
     }
 
