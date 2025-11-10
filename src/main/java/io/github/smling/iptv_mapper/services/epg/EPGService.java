@@ -72,6 +72,7 @@ public class EPGService extends IngestService {
         URI requestUri = URI.create(ds.getUrl());
         if(!new UriChecker().isUrlReachable(requestUri)) {
             logger.debug("Skip data source {} (type={}, enabled={})", ds.getId(), ds.getType(), ds.isEnabled());
+            return; // do not attempt fetch if not reachable
         }
 
         try {
@@ -94,15 +95,19 @@ public class EPGService extends IngestService {
             // Upsert channels and programmes for this TV
             upsertChannelsAndProgrammes(tv, tvEntity);
 
-        } catch(InterruptedException | IOException e) {
-            logger.error("Error occurred on fetching {}", requestUri);
+        } catch(InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.error("Interrupted while fetching {}", requestUri, e);
+        } catch(IOException e) {
+            logger.error("I/O error occurred while fetching {}", requestUri, e);
         }
     }
 
     private void upsertChannelsAndProgrammes(Tv tv, TvEntity tvEntity) {
         if(tv.channels().isEmpty()) return;
         var channels = tv.channels();
-        channels.parallelStream().forEach(chDto -> {
+        // Avoid parallel JPA writes within a single transaction; use sequential processing
+        channels.stream().forEach(chDto -> {
             // Upsert Channel by (tv, channelId)
             var existingCh = channelRepository.findByTv_IdAndChannelId(tvEntity.getId(), chDto.id())
                     .or(() -> channelRepository.findByChannelId(chDto.id()));
@@ -127,7 +132,8 @@ public class EPGService extends IngestService {
                                             ChannelEntity chEntity,
                                             java.util.List<Programme> allProgrammes) {
         if(allProgrammes == null || allProgrammes.isEmpty()) return;
-        allProgrammes.parallelStream()
+        // Avoid parallel operations hitting JPA from multiple threads
+        allProgrammes.stream()
                 .filter(p -> Objects.equals(chDto.id(), p.channel()))
                 .forEach(p -> {
                     var start = EPGTimeParser.parse(p.start());
@@ -157,7 +163,7 @@ public class EPGService extends IngestService {
         if(tv.channels().isEmpty()) {
             return List.of();
         }
-        return tv.channels().parallelStream()
+        return tv.channels().stream()
                 .map(channel -> {
                     ChannelEntity channelEntity = ChannelEntity.of(tvEntity, channel);
                     ChannelEntity savedChannelEntity = channelRepository.save(channelEntity);
@@ -171,7 +177,7 @@ public class EPGService extends IngestService {
         if(programmes.isEmpty()) {
             return List.of();
         }
-        return programmes.parallelStream()
+        return programmes.stream()
                 .filter(o-> channel.id().equals(o.channel()))
                 .map(o-> ProgrammeEntity.of(channelEntity,o))
                 .filter(Objects::nonNull)
