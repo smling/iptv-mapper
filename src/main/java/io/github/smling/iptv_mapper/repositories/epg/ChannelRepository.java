@@ -61,4 +61,8 @@ public interface ChannelRepository extends JpaRepository<ChannelEntity, String> 
             @Param("channelDbId") UUID channelDbId,
             Pageable pageable
     );
+
+    // Upsert helpers
+    java.util.Optional<ChannelEntity> findByChannelId(String channelId);
+    java.util.Optional<ChannelEntity> findByTv_IdAndChannelId(UUID tvId, String channelId);
 }

@@ -26,13 +26,8 @@ public class UriChecker {
     private final HttpClient.Version httpVersion;
     private final Executor executor;   // for RTSP socket work
 
-    // Accept 2xx/3xx as reachable; 401/403 mean "alive but requires auth" → also acceptable for health-check
-    private static boolean isReachableCode(int code) {
-        return (code >= 200 && code < 400)
-                || code == 401
-                || code == 403
-                ;
-    }
+    // In new semantics, only 200 is considered Reachable; other codes are Inaccessable
+    private static boolean isHttpOk200(int code) { return code == 200; }
 
     public UriChecker(HttpClient http, Duration hardTimeout, HttpClient.Version httpVersion, Executor executor) {
         this.http = Objects.requireNonNull(http);
@@ -48,11 +43,11 @@ public class UriChecker {
                 ForkJoinPool.commonPool());
     }
 
-    /** Async health check for http(s) and rts(p)s. */
-    public CompletableFuture<Boolean> checkAsync(URI uri) {
+    /** Async health check for http(s) and rts(p)s returning Reachability. */
+    public CompletableFuture<Reachability> checkAsync(URI uri) {
         if (uri == null) {
-            log.debug("❌ URL is null → unavailable");
-            return CompletableFuture.completedFuture(false);
+            log.debug("❌ URL is null → unreachable");
+            return CompletableFuture.completedFuture(Reachability.Unreachable);
         }
         String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase();
 
@@ -61,24 +56,29 @@ public class UriChecker {
         } else if (scheme.equals("rtsp") || scheme.equals("rtsps")) {
             return checkRtspAsync(uri);
         } else {
-            log.debug("❌ [{}] → unsupported scheme '{}' → unavailable", uri, scheme);
-            return CompletableFuture.completedFuture(false);
+            log.debug("❌ [{}] → unsupported scheme '{}' → unreachable", uri, scheme);
+            return CompletableFuture.completedFuture(Reachability.Unreachable);
         }
     }
 
-    /** Sync wrapper, if you still need a boolean directly. */
-    public boolean isUrlReachable(URI uri) {
+    /** Sync wrapper returning enum Reachability. */
+    public Reachability isReachable(URI uri) {
         try {
             return checkAsync(uri).orTimeout(hardTimeout.toMillis(), TimeUnit.MILLISECONDS).join();
         } catch (CompletionException e) {
-            log.debug("❌ [{}] → exception/timeout: {} → unavailable", uri, e.toString());
-            return false;
+            log.debug("❌ [{}] → exception/timeout: {} → unreachable", uri, e.toString());
+            return Reachability.Unreachable;
         }
+    }
+
+    /** Legacy boolean method: true only for Reachable. */
+    public boolean isUrlReachable(URI uri) {
+        return isReachable(uri) == Reachability.Reachable;
     }
 
     // ---------- HTTP path (sendAsync) ----------
 
-    private CompletableFuture<Boolean> checkHttpAsync(URI uri) {
+    private CompletableFuture<Reachability> checkHttpAsync(URI uri) {
         return sendAsyncStatus(uri, "GET")
                 .thenCompose(code -> {
                     if (code == 405 || code >= 400) {
@@ -90,13 +90,16 @@ public class UriChecker {
                     if (err != null) {
                         String msg = (err instanceof CompletionException && err.getCause() != null)
                                 ? err.getCause().toString() : err.toString();
-                        log.debug("❌ [{}] → exception: {} → unavailable", uri, msg);
-                        return false;
+                        log.debug("❌ [{}] → exception: {} → unreachable", uri, msg);
+                        return Reachability.Unreachable;
                     }
-                    boolean ok = isReachableCode(code);
-                    if (ok) log.debug("✅ [{}] → HTTP {} → available", uri, code);
-                    else    log.debug("❌ [{}] → HTTP {} → unavailable", uri, code);
-                    return ok;
+                    if (isHttpOk200(code)) {
+                        log.debug("✅ [{}] → HTTP {} → reachable", uri, code);
+                        return Reachability.Reachable;
+                    } else {
+                        log.debug("❌ [{}] → HTTP {} → inaccessable", uri, code);
+                        return Reachability.Inaccessable;
+                    }
                 });
     }
 
@@ -118,11 +121,11 @@ public class UriChecker {
 
     // ---------- RTSP path (socket-based OPTIONS) ----------
 
-    private CompletableFuture<Boolean> checkRtspAsync(URI uri) {
+    private CompletableFuture<Reachability> checkRtspAsync(URI uri) {
         return CompletableFuture.supplyAsync(() -> checkRtsp(uri), executor);
     }
 
-    private boolean checkRtsp(URI uri) {
+    private Reachability checkRtsp(URI uri) {
         String scheme = uri.getScheme().toLowerCase();
         String host = uri.getHost();
         if (host == null) {
@@ -160,22 +163,22 @@ public class UriChecker {
                 // Read status line: RTSP/1.0 200 OK
                 String statusLine = br.readLine();
                 if (statusLine == null) {
-                    log.debug("❌ [{}] → no response → unavailable", uri);
-                    return false;
+                    log.debug("❌ [{}] → no response → unreachable", uri);
+                    return Reachability.Unreachable;
                 }
 
                 code = parseRtspStatus(statusLine);
-                boolean ok = isReachableCode(code);
-
-                if (ok) log.debug("✅ [{}] → RTSP {} → available", uri, code);
-                else     log.debug("❌ [{}] → RTSP {} → unavailable", uri, code);
-
-                // We don’t need to read headers/body further for a health check
-                return ok;
+                if (code == 200) {
+                    log.debug("✅ [{}] → RTSP {} → reachable", uri, code);
+                    return Reachability.Reachable;
+                } else {
+                    log.debug("❌ [{}] → RTSP {} → inaccessable", uri, code);
+                    return Reachability.Inaccessable;
+                }
             }
         } catch (Exception e) {
-            log.debug("❌ [{}] → RTSP exception: {} → unavailable", uri, e.toString());
-            return false;
+            log.debug("❌ [{}] → RTSP exception: {} → unreachable", uri, e.toString());
+            return Reachability.Unreachable;
         }
     }
 

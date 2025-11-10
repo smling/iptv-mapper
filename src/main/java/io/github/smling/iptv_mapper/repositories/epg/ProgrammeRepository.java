@@ -36,4 +36,8 @@ public interface ProgrammeRepository extends JpaRepository<ProgrammeEntity, UUID
     @Transactional
     @Query(value = "DELETE FROM programme p WHERE p.start_time < :cutoff", nativeQuery = true)
     int deleteOlderThan(@Param("cutoff") OffsetDateTime cutoff);
+
+    java.util.Optional<ProgrammeEntity> findByChannel_IdAndStartTimeAndStopTime(UUID channelId,
+                                                                                OffsetDateTime start,
+                                                                                OffsetDateTime stop);
 }
