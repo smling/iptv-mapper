@@ -48,6 +48,7 @@ public class FuzzyMatchService {
         }
 
         // Build mappings for unmapped items only
+        logger.info("No. of channels to be match: {}", unmappedItems.size());
         unmappedItems.parallelStream().forEach(item -> {
             String key = String.format("%s %s",
                     item.getTitle() == null ? "" : item.getTitle(),
