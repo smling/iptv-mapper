@@ -14,7 +14,6 @@ RUN groupadd --gid 10001 appuser \
 # Add entrypoint script to handle OTEL agent fetch if needed
 COPY scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
-RUN ./usr/local/bin/entrypoint.sh
 
 USER appuser
 
