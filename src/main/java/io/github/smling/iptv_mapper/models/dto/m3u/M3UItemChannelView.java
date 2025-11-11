@@ -10,4 +10,5 @@ public interface M3UItemChannelView {
     String getUrl();          // mui.url
     String getTvIconUrl();
     String getTvId();
+    String getUrlCheckerResult(); // mui.url_checker_result
 }

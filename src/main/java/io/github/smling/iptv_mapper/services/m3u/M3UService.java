@@ -32,6 +32,7 @@ import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Service
 public class M3UService extends IngestService {
@@ -86,19 +87,44 @@ public class M3UService extends IngestService {
                     .orElse(M3UPlaylistEntity.of(ds, playlist));
             playlistEntity.setUpdatedAt(now);
             M3UPlaylistEntity savedPaylistEntity = playlistRepo.save(playlistEntity);
-            List<M3UItemEntity> validItems = getValidItems(playlist.items())
-                    .stream()
-                    .map(o -> itemRepo.findByPlaylistIdAndUrl(savedPaylistEntity.getId(), o.url().toString())
-                            .orElse(M3UItemEntity.of(savedPaylistEntity, o))
-                    )
-                    .toList();
-            ; // your parallel URL reachability checker
-            logger.info("M3U source [{}] fetched {} items ({} valid).", ds.getUrl(), playlist.items().size(), validItems.size());
 
-
-            if (!validItems.isEmpty()) {
-                itemRepo.saveAll(validItems);
+            var checker = new UriChecker();
+            AtomicInteger updated = new AtomicInteger(0);
+            AtomicInteger created = new AtomicInteger(0);
+            for (M3UItem item : playlist.items()) {
+                Reachability reach = checker.isReachable(item.url());
+                String urlStr = item.url() != null ? item.url().toString() : null;
+                itemRepo.findByPlaylistIdAndUrl(savedPaylistEntity.getId(), urlStr)
+                        .ifPresentOrElse(existing -> {
+                            existing.setUrl(urlStr);
+                            existing.setUpdatedAt(now);
+                            existing.setUrlCheckerResult(reach.name());
+                            var attrs = existing.getAttributes();
+                            if (attrs != null) {
+                                attrs.put("urlCheckerResult", reach.name());
+                            }
+                            itemRepo.save(existing);
+                            logger.debug("M3U item exists; updated url/checker: {} -> {}", urlStr, reach);
+                            updated.incrementAndGet();
+                        }, () -> {
+                            if (reach == Reachability.Reachable) {
+                                M3UItemEntity entity = M3UItemEntity.of(savedPaylistEntity, item);
+                                entity.setUrlCheckerResult(reach.name());
+                                var attrs = entity.getAttributes();
+                                if (attrs != null) {
+                                    attrs.put("urlCheckerResult", reach.name());
+                                }
+                                itemRepo.save(entity);
+                                logger.debug("M3U item new; created with checker result: {} -> {}", urlStr, reach);
+                                created.incrementAndGet();
+                            } else {
+                                logger.debug("M3U item unreachable/inaccessible; skipping create: {} -> {}", urlStr, reach);
+                            }
+                        });
             }
+
+            logger.info("M3U source [{}] processed {} items (updated={}, created={}).",
+                    ds.getUrl(), playlist.items().size(), updated.get(), created.get());
 
             // Optionally: update DS lastFetchedAt, lastHttpStatus, checksum, etc.
             ds.setLastHttpStatus(200)
