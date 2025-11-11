@@ -38,6 +38,13 @@ services:
       SPRING_APPLICATION_NAME: "iptv-mapper"
       SERVER_PORT: "8080"
       IPTV_BASE_URL: "http://localhost:8080"
+      # OpenTelemetry settings
+      OTEL_SERVICE_NAME: iptv-mapper
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=prod
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://loki:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      # Optional: override to pin agent version
+      # OTEL_JAVA_AGENT_URL: https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/download/v2.8.0/opentelemetry-javaagent.jar
     # For local environment.
     image: iptv-mapper:latest
     # For remote deployment.
@@ -49,7 +56,23 @@ services:
       - "8443:8443"
     depends_on:
       - db
+    volumes:
+      - otelcache:/otel
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health | grep -q '\"status\":\"UP\"'"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 45s
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://loki:3100/loki/api/v1/push"
+        mode: non-blocking
+        max-buffer-size: 4m
+        loki-external-labels: "job=iptv-mapper,container={{.Name}},compose_service={{.Service}}"
 
 volumes:
   pgdata:
+  otelcache:
 
