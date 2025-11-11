@@ -48,6 +48,9 @@ public class M3UItemEntity extends AuditEntity {
     @Column(name = "group_title")
     private String groupTitle;
 
+    @Column(name = "url_checker_result")
+    private String urlCheckerResult;
+
     // Keep other attributes
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "attributes", columnDefinition = "jsonb", nullable = false)
@@ -144,6 +147,9 @@ public class M3UItemEntity extends AuditEntity {
 
     public String getGroupTitle() { return groupTitle; }
     public M3UItemEntity setGroupTitle(String groupTitle) { this.groupTitle = groupTitle; return this; }
+
+    public String getUrlCheckerResult() { return urlCheckerResult; }
+    public M3UItemEntity setUrlCheckerResult(String urlCheckerResult) { this.urlCheckerResult = urlCheckerResult; return this; }
 
     public Map<String, String> getAttributes() { return attributes; }
     public M3UItemEntity setAttributes(Map<String, String> attributes) {

@@ -28,7 +28,8 @@ public interface M3UItemChannelMapRepository extends JpaRepository<M3UItemChanne
               c.display_name    AS displayName,
               mui.url           AS url,
                mui.tvg_logo     AS tvIconUrl,
-               mui.tvg_id       AS tvId
+               mui.tvg_id       AS tvId,
+               mui.url_checker_result AS urlCheckerResult
             FROM m3u_item mui
             JOIN m3u_item_channel_map muicm ON mui.id  = muicm.m3u_item_id
             JOIN channel c                  ON muicm.channel_id = c.id

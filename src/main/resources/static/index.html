@@ -373,7 +373,8 @@
         div.style.left = left + 'px';
         div.style.width = width + 'px';
         div.title = `${fmtTime(p.startTime)}–${fmtTime(p.stopTime)}\n${p.description || ''}`;
-        div.innerHTML = `<div class="font-semibold truncate">${safe(p.title || '')}</div>`;
+        const cellText = p.m3uItemTitle ? `${safe(p.m3uItemTitle)} · ${safe(p.title || '')}` : `${safe(p.title || '')}`;
+        div.innerHTML = `<div class="font-semibold truncate">${cellText}</div>`;
         progLayer.appendChild(div);
       }
 

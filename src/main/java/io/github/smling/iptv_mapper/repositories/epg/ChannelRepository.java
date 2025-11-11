@@ -44,9 +44,18 @@ public interface ChannelRepository extends JpaRepository<ChannelEntity, String> 
           p.start_time    AS startTime,
           p.stop_time     AS stopTime,
           p.title         AS title,
-          p.description   AS description
+          p.description   AS description,
+          mi.m3u_title    AS m3uItemTitle
         FROM channel c
         JOIN programme p ON c.id = p.channel_id
+        LEFT JOIN LATERAL (
+            SELECT m_inner.title AS m3u_title
+            FROM m3u_item_channel_map map
+            JOIN m3u_item m_inner ON m_inner.id = map.m3u_item_id
+            WHERE map.channel_id = c.id
+            ORDER BY map.updated_at DESC NULLS LAST, map.created_at DESC NULLS LAST
+            LIMIT 1
+        ) mi ON TRUE
         WHERE c.id = :channelDbId
         ORDER BY p.start_time ASC
         """,
