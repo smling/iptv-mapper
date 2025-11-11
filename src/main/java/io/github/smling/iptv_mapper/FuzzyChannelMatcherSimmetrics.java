@@ -23,12 +23,20 @@ public final class FuzzyChannelMatcherSimmetrics {
 
     /**
      * Finds the most similar ChannelEntity by comparing the query with tvgName/displayName.
-     * @param query channel name from playlist
-     * @param data list of channels
-     * @return best matching channel with score
+     * Always returns the highest-scoring candidate (no threshold gate). If there are no
+     * candidates or input is empty, returns Optional.empty().
      */
     public static Optional<MatchResult> match(String query, List<ChannelEntity> data) {
-        return match(query, data, 0.85);
+        if (query == null || data == null || data.isEmpty()) return Optional.empty();
+        return data.stream()
+                .map(ch -> {
+                    String candidate = firstNonBlank(ch.getDisplayName(), ch.getChannelId());
+                    if (candidate == null) return null;
+                    float score = METRIC.compare(query, candidate);
+                    return new MatchResult(ch, score);
+                })
+                .filter(Objects::nonNull)
+                .max(Comparator.comparingDouble(MatchResult::score));
     }
 
     public static Optional<MatchResult> match(String query, List<ChannelEntity> data, double threshold) {

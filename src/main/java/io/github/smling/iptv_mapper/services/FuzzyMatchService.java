@@ -42,25 +42,44 @@ public class FuzzyMatchService {
         List<ChannelEntity> channels = channelRepository.findAll();
         List<M3UItemEntity> unmappedItems = itemRepository.findAllUnmapped();
 
-        if (unmappedItems.isEmpty() || channels.isEmpty()) {
-            logger.info("No unmapped items or no channels available to match.");
+        if (channels.isEmpty()) {
+            logger.info("🛑 Fuzzy match: no channels available. Skipping.");
+            return;
+        }
+        if (unmappedItems.isEmpty()) {
+            logger.info("🛑 Fuzzy match: no unmapped M3U items. Skipping.");
             return;
         }
 
-        // Build mappings for unmapped items only
-        logger.info("No. of channels to be match: {}", unmappedItems.size());
+        logger.info("🔎 Fuzzy match: channels={}, unmappedItems={}", channels.size(), unmappedItems.size());
+
+        final java.util.concurrent.atomic.AtomicInteger matched = new java.util.concurrent.atomic.AtomicInteger();
+        final java.util.concurrent.atomic.AtomicInteger unmatched = new java.util.concurrent.atomic.AtomicInteger();
+
         unmappedItems.parallelStream().forEach(item -> {
             String key = String.format("%s %s",
                     item.getTitle() == null ? "" : item.getTitle(),
                     item.getTvgId() == null ? "" : item.getTvgId()).trim();
 
-            FuzzyChannelMatcherSimmetrics.match(key, channels).ifPresent(best -> {
-                logger.debug("Best match for '{}' => {} ({}) score={}",
-                        key, best.entity().getChannelId(), best.entity().getDisplayName(), best.score());
+            var opt = FuzzyChannelMatcherSimmetrics.match(key, channels);
+            if (opt.isPresent()) {
+                var best = opt.get();
+                logger.debug("✅ Matched '{}' → {} ({}) score={}",
+                        key, best.entity().getChannelId(), best.entity().getDisplayName(), String.format("%.4f", best.score()));
                 // Directly create mapping; item is guaranteed unmapped in this batch
                 repo.save(M3UItemChannelMapEntity.ofAuto(item, best.entity(), best.score(), "auto", clock));
-            });
+                matched.incrementAndGet();
+            } else {
+                logger.debug("❌ No match for '{}'", key);
+                unmatched.incrementAndGet();
+            }
         });
+
+        int m = matched.get();
+        int u = unmatched.get();
+        int total = m + u;
+        String pct = total == 0 ? "0.0%" : String.format("%.1f%%", (m * 100.0 / total));
+        logger.info("📊 Fuzzy match summary: matched={}/{} ({}), unmatched={}.", m, total, pct, u);
     }
 
     /** Upsert auto mapping if not manually locked. */
