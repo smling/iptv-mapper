@@ -11,5 +11,6 @@ public interface ChannelProgrammeView {
     Instant getStopTime();     // p.stop_time
     String getTitle();         // p.title
     String getDescription();   // p.description
+    String getM3uItemTitle();  // preferred mapped M3U item title
 }
 
