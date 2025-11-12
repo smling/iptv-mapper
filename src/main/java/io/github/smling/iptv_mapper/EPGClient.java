@@ -45,6 +45,7 @@ public class EPGClient {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(url)
                 .timeout(Duration.ofSeconds(HTTP_REQUEST_TIMEOUT_IN_SECOND))
+                .header("Accept-Encoding", "gzip, identity")
                 .GET()
                 .build();
 
@@ -61,7 +62,12 @@ public class EPGClient {
             throw new IOException("Failed to fetch EPG (XML), HTTP " + response.statusCode());
         }
 
-        try (InputStream in = response.body()) {
+        boolean gzip = response.headers().firstValue("Content-Encoding")
+                .map(v -> v.toLowerCase(Locale.ROOT).contains("gzip"))
+                .orElse(false);
+
+        try (InputStream raw = response.body();
+             InputStream in = gzip ? new GZIPInputStream(raw) : raw) {
             Tv tv = xmlMapper.readValue(in, Tv.class);
             log.debug("🧩 Deserialized XML into Tv object from {}", url);
             return tv;
@@ -135,6 +141,7 @@ public class EPGClient {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(url)
                 .timeout(Duration.ofSeconds(HTTP_REQUEST_TIMEOUT_IN_SECOND))
+                .header("Accept-Encoding", "gzip, identity")
                 .GET()
                 .build();
 
@@ -150,6 +157,49 @@ public class EPGClient {
             throw new IOException("Failed to open EPG stream (XML), HTTP " + response.statusCode());
         }
 
-        return response.body();
+        boolean gzip = response.headers().firstValue("Content-Encoding")
+                .map(v -> v.toLowerCase(Locale.ROOT).contains("gzip"))
+                .orElse(false);
+
+        InputStream raw = response.body();
+        return gzip ? new GZIPInputStream(raw) : raw;
+    }
+
+    /**
+     * Download the EPG (decompressing if needed) to a temporary file and return its path.
+     * This decouples network I/O from downstream parsing/DB I/O to avoid server-side timeouts
+     * and premature EOF when parsing slowly.
+     */
+    public java.nio.file.Path downloadToTempFile(URI url) throws IOException, InterruptedException {
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(url)
+                .timeout(Duration.ofSeconds(HTTP_REQUEST_TIMEOUT_IN_SECOND))
+                .header("Accept-Encoding", "gzip, identity")
+                .GET()
+                .build();
+
+        Instant start = Instant.now();
+        log.debug("🌐 Downloading EPG to temp file: {}", url);
+
+        HttpResponse<InputStream> response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
+        long duration = Duration.between(start, Instant.now()).toMillis();
+        log.debug("📥 Response {} - status: {}, took {} ms", url, response.statusCode(), duration);
+
+        if (response.statusCode() != 200) {
+            throw new IOException("Failed to download EPG (XML), HTTP " + response.statusCode());
+        }
+
+        boolean gzip = response.headers().firstValue("Content-Encoding")
+                .map(v -> v.toLowerCase(Locale.ROOT).contains("gzip"))
+                .orElse(false);
+
+        java.nio.file.Path tmp = java.nio.file.Files.createTempFile("epg-", ".xml");
+        try (InputStream raw = response.body();
+             InputStream in = gzip ? new GZIPInputStream(raw) : raw;
+             java.io.OutputStream out = java.nio.file.Files.newOutputStream(tmp, java.nio.file.StandardOpenOption.TRUNCATE_EXISTING)) {
+            in.transferTo(out);
+        }
+        log.debug("💾 EPG saved to {} (gzip={})", tmp, gzip);
+        return tmp;
     }
 }
