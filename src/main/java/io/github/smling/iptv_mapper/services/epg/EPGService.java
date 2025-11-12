@@ -259,7 +259,7 @@ public class EPGService extends IngestService {
 
     private void upsertProgrammesForChannel(io.github.smling.iptv_mapper.models.dto.epg.Channel chDto,
                                             ChannelEntity chEntity,
-                                            java.util.List<Programme> allProgrammes) {
+                                            List<Programme> allProgrammes) {
         if(allProgrammes == null || allProgrammes.isEmpty()) return;
         // Avoid parallel operations hitting JPA from multiple threads
         allProgrammes.stream()

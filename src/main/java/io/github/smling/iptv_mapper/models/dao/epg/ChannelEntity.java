@@ -2,6 +2,8 @@ package io.github.smling.iptv_mapper.models.dao.epg;
 
 import io.github.smling.iptv_mapper.models.dao.AuditEntity;
 import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import io.github.smling.iptv_mapper.models.dto.epg.Channel;
 import java.util.ArrayList;
@@ -21,6 +23,10 @@ public class ChannelEntity extends AuditEntity {
 
     @Column(name = "display_name")
     private String displayName;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "meta", columnDefinition = "jsonb")
+    private java.util.Map<String, Object> meta = new java.util.HashMap<>();
 
     @OneToMany(mappedBy = "channel", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<ProgrammeEntity> programmes = new ArrayList<>();
@@ -53,6 +59,9 @@ public class ChannelEntity extends AuditEntity {
 
     public String getDisplayName() { return displayName; }
     public ChannelEntity setDisplayName(String displayName) { this.displayName = displayName; return this; }
+
+    public java.util.Map<String, Object> getMeta() { return meta; }
+    public ChannelEntity setMeta(java.util.Map<String, Object> meta) { this.meta = meta; return this; }
 
     public List<ProgrammeEntity> getProgrammes() { return programmes; }
     public ChannelEntity setProgrammes(List<ProgrammeEntity> programmes) { this.programmes = programmes; return this; }
