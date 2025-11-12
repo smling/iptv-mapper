@@ -78,17 +78,26 @@ public class EPGService extends IngestService {
     public void ingestOneInTx(DataSourceEntity ds) {
         URI requestUri = URI.create(ds.getUrl());
         if(!new UriChecker().isUrlReachable(requestUri)) {
-            logger.debug("Skip data source {} (type={}, enabled={})", ds.getId(), ds.getType(), ds.isEnabled());
+            logger.debug("⏭️ Skip data source {} (type={}, enabled={})", ds.getId(), ds.getType(), ds.isEnabled());
             return; // do not attempt fetch if not reachable
         }
 
-        try (InputStream in = new EPGClient().openXmlStream(requestUri)) {
-            streamIngest(in, ds);
+        logger.info("📡 Starting EPG ingest for {}", requestUri);
+        try {
+            // Download first to avoid premature EOF when parsing is slow due to DB writes
+            java.nio.file.Path tmp = new EPGClient().downloadToTempFile(requestUri);
+            logger.debug("💾 EPG downloaded to temp file: {}", tmp);
+            try (InputStream in = java.nio.file.Files.newInputStream(tmp)) {
+                streamIngest(in, ds);
+                logger.info("✅ Completed EPG ingest for {}", requestUri);
+            } finally {
+                try { java.nio.file.Files.deleteIfExists(tmp); } catch (Exception ignore) {}
+            }
         } catch(InterruptedException e) {
             Thread.currentThread().interrupt();
-            logger.error("Interrupted while fetching {}", requestUri, e);
+            logger.error("🛑 Interrupted while fetching {}", requestUri, e);
         } catch(IOException e) {
-            logger.error("I/O error occurred while fetching {}", requestUri, e);
+            logger.error("❌ I/O error occurred while fetching {}", requestUri, e);
         }
     }
 
@@ -102,6 +111,7 @@ public class EPGService extends IngestService {
             String tvGenName = null;
             String tvGenUrl = null;
             Map<String, ChannelEntity> channelCache = new HashMap<>();
+            int chCreated = 0, chUpdated = 0, progCreated = 0, progUpdated = 0;
 
             while (r.hasNext()) {
                 int ev = r.next();
@@ -115,8 +125,10 @@ public class EPGService extends IngestService {
                             .findByGeneratorInfoNameAndGeneratorInfoUrl(tvGenName, tvGenUrl);
                     if (existing.isPresent()) {
                         tvEntity = existing.get();
+                        logger.debug("🔁 Reusing TvEntity id={} gen='{}' url='{}'", tvEntity.getId(), tvGenName, tvGenUrl);
                     } else {
                         tvEntity = tvRepository.save(TvEntity.of(ds, new Tv(tvGenName, tvGenUrl, List.of(), List.of()), clock));
+                        logger.debug("🆕 Created TvEntity gen='{}' url='{}'", tvGenName, tvGenUrl);
                     }
                 } else if ("channel".equals(name)) {
                     if (tvEntity == null) continue; // safeguard
@@ -131,14 +143,21 @@ public class EPGService extends IngestService {
                             break;
                         }
                     }
-                    TvEntity finalTvEntity = tvEntity;
-                    String finalDisplayName = displayName;
-                    ChannelEntity chEntity = channelRepository.findByTv_IdAndChannelId(tvEntity.getId(), chId)
-                            .or(() -> channelRepository.findByChannelId(chId))
-                            .orElseGet(() -> channelRepository.save(ChannelEntity.of(finalTvEntity, new Channel(chId, finalDisplayName))));
+                    Optional<ChannelEntity> chOpt = channelRepository.findByTv_IdAndChannelId(tvEntity.getId(), chId)
+                            .or(() -> channelRepository.findByChannelId(chId));
+                    ChannelEntity chEntity;
+                    if (chOpt.isPresent()) {
+                        chEntity = chOpt.get();
+                    } else {
+                        chEntity = channelRepository.save(ChannelEntity.of(tvEntity, new Channel(chId, displayName)));
+                        chCreated++;
+                        logger.debug("➕ Inserted channel '{}' ('{}')", chId, displayName);
+                    }
                     if (!Objects.equals(chEntity.getDisplayName(), displayName) && displayName != null) {
                         chEntity.setDisplayName(displayName);
                         channelRepository.save(chEntity);
+                        chUpdated++;
+                        logger.debug("✏️ Updated channel '{}' displayName -> '{}'", chId, displayName);
                     }
                     channelCache.put(chId, chEntity);
                 } else if ("programme".equals(name)) {
@@ -178,15 +197,18 @@ public class EPGService extends IngestService {
                         boolean changed = false;
                         if (!Objects.equals(prog.getTitle(), title)) { prog.setTitle(title); changed = true; }
                         if (!Objects.equals(prog.getDescription(), desc)) { prog.setDescription(desc); changed = true; }
-                        if (changed) programmeRepository.save(prog);
+                        if (changed) { programmeRepository.save(prog); progUpdated++; }
                     } else {
                         programmeRepository.save(ProgrammeEntity.of(chEntity,
                                 new Programme(start, stop, chRef, title, desc)));
+                        progCreated++;
                     }
                 }
             }
+            logger.info("📦 EPG ingest summary: channels created={}, updated={}, programmes created={}, updated={}",
+                    chCreated, chUpdated, progCreated, progUpdated);
         } catch (XMLStreamException e) {
-            throw new IllegalStateException("Failed to parse EPG stream", e);
+            throw new IllegalStateException("📉 Failed to parse EPG stream", e);
         } finally {
             if (r != null) try { r.close(); } catch (Exception ignored) {}
         }

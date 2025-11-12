@@ -36,3 +36,11 @@
 - App config: `src/main/resources/application.yml`; override via env (e.g., `SPRING_PROFILES_ACTIVE`, `SPRING_DATASOURCE_URL`).
 - Secrets via environment/compose, not committed files.
 - DB changes via new Flyway migrations in `scripts/sql/initial/`.
+
+## Logging Style
+- Prefer concise, informative logs with clear context.
+- Use emojis to improve readability and scanning, especially for long-running tasks and batch operations. Examples:
+  - Start/stop: "📡 Starting …", "✅ Completed …", failures: "❌ …", interruptions: "🛑 …".
+  - Summaries: "📊 …", insert/update actions: "➕", "✏️", reuse: "🔁", creation: "🆕".
+- Keep sensitive data out of logs (no secrets/tokens). Include IDs and key fields to trace entities.
+- Default per-item logs at DEBUG; batch summaries at INFO.
