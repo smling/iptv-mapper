@@ -8,7 +8,10 @@ import com.fasterxml.jackson.dataformat.xml.XmlMapper;
 public final class XmlMapperFactory {
     public static XmlMapper ofEPG() {
         XmlMapper mapper = (XmlMapper) new XmlMapper()
-                .setSerializationInclusion(JsonInclude.Include.NON_EMPTY)
+                // Keep nulls out, but allow empty strings so required XMLTV
+                // elements like <title> and <display-name> still serialize
+                // even when values are empty.
+                .setSerializationInclusion(JsonInclude.Include.NON_NULL)
                 .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
                 ;
         mapper.configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false);

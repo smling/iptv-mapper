@@ -4,5 +4,12 @@ import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
 
 public record Icon(
         @JacksonXmlProperty(isAttribute = true, localName = "src")
-        String src
+        String src,
+
+        @JacksonXmlProperty(isAttribute = true, localName = "width")
+        String width,
+
+        @JacksonXmlProperty(isAttribute = true, localName = "height")
+        String height
 ) {}
+

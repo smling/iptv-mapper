@@ -4,6 +4,8 @@ import io.github.smling.iptv_mapper.models.dao.AuditEntity;
 import io.github.smling.iptv_mapper.models.dto.epg.Programme;
 import io.github.smling.iptv_mapper.parsers.EPGTimeParser;
 import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -27,6 +29,10 @@ public class ProgrammeEntity extends AuditEntity {
 
     @Column(name = "description", columnDefinition = "text")
     private String description;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "meta", columnDefinition = "jsonb")
+    private java.util.Map<String, Object> meta = new java.util.HashMap<>();
 
     @ManyToOne(optional = false)
     @JoinColumn(name = "channel_id")
@@ -91,6 +97,9 @@ public class ProgrammeEntity extends AuditEntity {
         this.description = description;
         return this;
     }
+
+    public java.util.Map<String, Object> getMeta() { return meta; }
+    public ProgrammeEntity setMeta(java.util.Map<String, Object> meta) { this.meta = meta; return this; }
 
     public ChannelEntity getChannel() {
         return channel;

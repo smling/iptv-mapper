@@ -2,7 +2,10 @@ package io.github.smling.iptv_mapper.models.dto.epg;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlElementWrapper;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
+
+import java.util.List;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record Programme(
@@ -24,9 +27,17 @@ public record Programme(
 
         @JsonProperty("desc")
         @JacksonXmlProperty(localName = "desc")
-        String desc
+        String desc,
 
-//        @JsonProperty("episode-num")
-//        @JacksonXmlProperty(localName = "episode-num")
-//        EpisodeNumber episodeNum
+        @JacksonXmlElementWrapper(useWrapping = false)
+        @JacksonXmlProperty(localName = "category")
+        List<String> categories,
+
+        @JacksonXmlElementWrapper(useWrapping = false)
+        @JacksonXmlProperty(localName = "episode-num")
+        List<EpisodeNumber> episodeNums,
+
+        @JacksonXmlElementWrapper(useWrapping = false)
+        @JacksonXmlProperty(localName = "icon")
+        List<Icon> icons
 ) {}
