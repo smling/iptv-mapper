@@ -108,8 +108,8 @@ public class EPGService extends IngestService {
             r = f.createXMLStreamReader(in);
 
             TvEntity tvEntity = null;
-            String tvGenName = null;
-            String tvGenUrl = null;
+            String tvGenName;
+            String tvGenUrl;
             Map<String, ChannelEntity> channelCache = new HashMap<>();
             int chCreated = 0, chUpdated = 0, progCreated = 0, progUpdated = 0;
 
@@ -127,7 +127,7 @@ public class EPGService extends IngestService {
                         tvEntity = existing.get();
                         logger.debug("🔁 Reusing TvEntity id={} gen='{}' url='{}'", tvEntity.getId(), tvGenName, tvGenUrl);
                     } else {
-                        tvEntity = tvRepository.save(TvEntity.of(ds, new Tv(tvGenName, tvGenUrl, List.of(), List.of()), clock));
+                        tvEntity = tvRepository.save(TvEntity.of(ds, new Tv(null, null, tvGenName, tvGenUrl, List.of(), List.of()), clock));
                         logger.debug("🆕 Created TvEntity gen='{}' url='{}'", tvGenName, tvGenUrl);
                     }
                 } else if ("channel".equals(name)) {
@@ -149,7 +149,7 @@ public class EPGService extends IngestService {
                     if (chOpt.isPresent()) {
                         chEntity = chOpt.get();
                     } else {
-                        chEntity = channelRepository.save(ChannelEntity.of(tvEntity, new Channel(chId, displayName)));
+                        chEntity = channelRepository.save(ChannelEntity.of(tvEntity, Channel.ofSingleName(chId, displayName)));
                         chCreated++;
                         logger.debug("➕ Inserted channel '{}' ('{}')", chId, displayName);
                     }
@@ -200,7 +200,7 @@ public class EPGService extends IngestService {
                         if (changed) { programmeRepository.save(prog); progUpdated++; }
                     } else {
                         programmeRepository.save(ProgrammeEntity.of(chEntity,
-                                new Programme(start, stop, chRef, title, desc)));
+                                new Programme(start, stop, chRef, title, desc, List.of(), List.of(), List.of())));
                         progCreated++;
                     }
                 }
@@ -244,8 +244,9 @@ public class EPGService extends IngestService {
             ChannelEntity chEntity;
             if (existingCh.isPresent()) {
                 chEntity = existingCh.get();
-                if (!Objects.equals(chEntity.getDisplayName(), chDto.displayName())) {
-                    chEntity.setDisplayName(chDto.displayName());
+                String newName = (chDto.displayNames() != null && !chDto.displayNames().isEmpty()) ? chDto.displayNames().get(0) : null;
+                if (!Objects.equals(chEntity.getDisplayName(), newName)) {
+                    chEntity.setDisplayName(newName);
                     channelRepository.save(chEntity);
                 }
             } else {
@@ -320,7 +321,7 @@ public class EPGService extends IngestService {
 
         // 1) Channels → DTO
         var channels = channelRepository.findAllChannelsWithMappingId().stream()
-                .map(c -> new Channel(c.getXmltvId(), c.getDisplayName()))
+                .map(c -> Channel.ofSingleName(c.getXmltvId(), c.getDisplayName()))
                 .toList();
 
         // 2) Programmes → DTO (format timestamps as "yyyyMMddHHmmss +0000")
@@ -330,14 +331,19 @@ public class EPGService extends IngestService {
                         EPGTimeParser.toIsoInstantString(p.getStopUtc()),
                         p.getChannelXmltvId(),
                         StringUtil.nullSafe(p.getTitle()),
-                        StringUtil.nullSafe(p.getDesc())
+                        StringUtil.nullSafe(p.getDesc()),
+                        List.of(),
+                        List.of(),
+                        List.of()
                 ))
                 .toList();
 
         // 3) Tv root
         var tv = new Tv(
-                appName,                       // generator-info-name
-                getGeneratorInfoUrl(),               // generator-info-url
+                null,                       // source-info-name
+                null,                       // source-info-url
+                appName,                    // generator-info-name
+                getGeneratorInfoUrl(),      // generator-info-url
                 channels,
                 progs
         );
@@ -355,7 +361,7 @@ public class EPGService extends IngestService {
         var end   = (to == null ? nowUtc.plusHours(24) : to.withOffsetSameInstant(ZoneOffset.UTC));
 
         var channels = channelRepository.findAllChannelsWithMappingId().stream()
-                .map(c -> new Channel(c.getXmltvId(), c.getDisplayName()))
+                .map(c -> Channel.ofSingleName(c.getXmltvId(), c.getDisplayName()))
                 .toList();
 
         var progs = programmeRepository.findProgrammesBetween(start, end).stream()
@@ -364,11 +370,16 @@ public class EPGService extends IngestService {
                         EPGTimeParser.toIsoInstantString(p.getStopUtc()),
                         p.getChannelXmltvId(),
                         StringUtil.nullSafe(p.getTitle()),
-                        StringUtil.nullSafe(p.getDesc())
+                        StringUtil.nullSafe(p.getDesc()),
+                        List.of(),
+                        List.of(),
+                        List.of()
                 ))
                 .toList();
 
         var tv = new Tv(
+                null,
+                null,
                 appName,
                 getGeneratorInfoUrl(),
                 channels,

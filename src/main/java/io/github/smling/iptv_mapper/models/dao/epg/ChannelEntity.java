@@ -39,10 +39,14 @@ public class ChannelEntity extends AuditEntity {
 
     /** Factory matching the DTO */
     public static ChannelEntity of(TvEntity tvEntity, Channel dto) {
+        String dn = null;
+        if (dto.displayNames() != null && !dto.displayNames().isEmpty()) {
+            dn = dto.displayNames().get(0);
+        }
         return new ChannelEntity()
                 .setTv(tvEntity)
                 .setChannelId(dto.id())
-                .setDisplayName(dto.displayName());
+                .setDisplayName(dn);
     }
 
     public void addProgramme(ProgrammeEntity programme) {
