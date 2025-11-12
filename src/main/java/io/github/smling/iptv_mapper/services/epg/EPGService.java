@@ -321,7 +321,14 @@ public class EPGService extends IngestService {
 
         // 1) Channels → DTO
         var channels = channelRepository.findAllChannelsWithMappingId().stream()
-                .map(c -> Channel.ofSingleName(c.getXmltvId(), c.getDisplayName()))
+                .map(c -> {
+                    String id = c.getXmltvId();
+                    String name = c.getDisplayName();
+                    if (name == null || name.isBlank()) {
+                        name = id; // XMLTV requires at least one <display-name>
+                    }
+                    return Channel.ofSingleName(id, name);
+                })
                 .toList();
 
         // 2) Programmes → DTO (format timestamps as "yyyyMMddHHmmss +0000")
@@ -361,7 +368,14 @@ public class EPGService extends IngestService {
         var end   = (to == null ? nowUtc.plusHours(24) : to.withOffsetSameInstant(ZoneOffset.UTC));
 
         var channels = channelRepository.findAllChannelsWithMappingId().stream()
-                .map(c -> Channel.ofSingleName(c.getXmltvId(), c.getDisplayName()))
+                .map(c -> {
+                    String id = c.getXmltvId();
+                    String name = c.getDisplayName();
+                    if (name == null || name.isBlank()) {
+                        name = id; // XMLTV requires at least one <display-name>
+                    }
+                    return Channel.ofSingleName(id, name);
+                })
                 .toList();
 
         var progs = programmeRepository.findProgrammesBetween(start, end).stream()
