@@ -3,6 +3,7 @@ package io.github.smling.iptv_mapper.services;
 import io.github.smling.iptv_mapper.models.DataSourceType;
 import io.github.smling.iptv_mapper.models.dao.DataSourceEntity;
 import io.github.smling.iptv_mapper.repositories.DataSourceRepository;
+import org.springframework.context.ApplicationContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.transaction.annotation.Propagation;
@@ -15,10 +16,12 @@ import java.util.concurrent.Executors;
 
 public abstract class IngestService {
     private final DataSourceRepository dataSourceRepo;
+    private final ApplicationContext applicationContext;
     private final Logger logger = LoggerFactory.getLogger(IngestService.class);
 
-    public IngestService(DataSourceRepository dataSourceRepo) {
+    public IngestService(DataSourceRepository dataSourceRepo, ApplicationContext applicationContext) {
         this.dataSourceRepo = dataSourceRepo;
+        this.applicationContext = applicationContext;
     }
 
     /**
@@ -37,27 +40,25 @@ public abstract class IngestService {
             return;
         }
 
-        int threads = Math.min(32, Math.max(2, Runtime.getRuntime().availableProcessors() * 2));
+        // Keep parallelism modest to avoid exhausting DB connections
+        int threads = Math.min(2, Math.max(1, sources.size()));
         try (ExecutorService pool = Executors.newFixedThreadPool(threads, r -> {
             var t = new Thread(r, dataSourceType.name() + "-ingest");
             t.setDaemon(true);
             return t;
         })) {
             var futures = sources.stream()
-                    .map(ds -> CompletableFuture.runAsync(() -> safeIngestOne(ds), pool))
+                    .map(ds -> CompletableFuture.runAsync(() -> {
+                        try {
+                            // Call through Spring proxy so @Transactional applies
+                            IngestService proxy = (IngestService) applicationContext.getBean(this.getClass());
+                            proxy.ingestOneInTx(ds);
+                        } catch (Exception e) {
+                            logger.warn("Ingest failed for {} source [{}] {}: {}", getDataSourcesType(), ds.getId(), ds.getUrl(), e, e);
+                        }
+                    }, pool))
                     .toArray(CompletableFuture[]::new);
             CompletableFuture.allOf(futures).join();
-        }
-    }
-
-    /**
-     * Catch/Log per-source errors so the parallel batch continues.
-     */
-    private void safeIngestOne(DataSourceEntity ds) {
-        try {
-            ingestOneInTx(ds);
-        } catch (Exception e) {
-            logger.warn("Ingest failed for {} source [{}] {}: {}", getDataSourcesType(), ds.getId(), ds.getUrl(), e, e);
         }
     }
 

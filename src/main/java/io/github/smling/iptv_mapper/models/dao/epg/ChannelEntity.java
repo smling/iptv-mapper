@@ -1,14 +1,16 @@
 package io.github.smling.iptv_mapper.models.dao.epg;
 
+import io.github.smling.iptv_mapper.ListUtil;
+import io.github.smling.iptv_mapper.StringUtil;
 import io.github.smling.iptv_mapper.models.dao.AuditEntity;
+import io.github.smling.iptv_mapper.models.dto.epg.Channel;
+import io.github.smling.iptv_mapper.models.dto.epg.Text;
+import io.github.smling.iptv_mapper.models.dto.epg.UrlRef;
 import jakarta.persistence.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
-import io.github.smling.iptv_mapper.models.dto.epg.Channel;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 
 @Entity
 @Table(name = "channel")
@@ -24,12 +26,20 @@ public class ChannelEntity extends AuditEntity {
     @Column(name = "display_name")
     private String displayName;
 
+    // Flexible metadata to align with DTO (e.g., icons)
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "meta", columnDefinition = "jsonb")
-    private java.util.Map<String, Object> meta = new java.util.HashMap<>();
+    @Column(name = "meta", columnDefinition = "jsonb", nullable = false)
+    private Map<String, Object> meta = new HashMap<>();
+
 
     @OneToMany(mappedBy = "channel", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<ProgrammeEntity> programmes = new ArrayList<>();
+
+    @OneToMany(mappedBy = "channel", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<ChannelDisplayNameEntity> displayNames = new ArrayList<>();
+
+    @OneToMany(mappedBy = "channel", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<ChannelUrlEntity> urls = new ArrayList<>();
 
     @ManyToOne(optional = false)
     @JoinColumn(name = "tv_id")
@@ -39,14 +49,44 @@ public class ChannelEntity extends AuditEntity {
 
     /** Factory matching the DTO */
     public static ChannelEntity of(TvEntity tvEntity, Channel dto) {
-        String dn = null;
-        if (dto.displayNames() != null && !dto.displayNames().isEmpty()) {
-            dn = dto.displayNames().get(0);
-        }
-        return new ChannelEntity()
+        ChannelEntity ce = new ChannelEntity()
                 .setTv(tvEntity)
-                .setChannelId(dto.id())
-                .setDisplayName(dn);
+                .setChannelId(dto.id());
+        // Populate related names
+        if (ListUtil.notNullAndNotEmpty(dto.displayNames())) {
+            ce.getDisplayNames().clear();
+            int pos = 0;
+            for (Text t : dto.displayNames()) {
+                ChannelDisplayNameEntity cde = new ChannelDisplayNameEntity()
+                        .setChannel(ce)
+                        .setLang(t.lang())
+                        .setName(t.value())
+                        .setPosition(pos++);
+                ce.getDisplayNames().add(cde);
+            }
+            // Also set a default displayName to the first value for quick access
+            Text first = dto.displayNames().getFirst();
+            if (first != null && StringUtil.notNullAndNotEmpty(first.value())) {
+                ce.setDisplayName(first.value());
+            }
+        }
+        if(ListUtil.notNullAndNotEmpty(dto.urls())) {
+            ce.getUrls().clear();
+            for (UrlRef u : dto.urls()) {
+                ChannelUrlEntity cue = new ChannelUrlEntity()
+                        .setChannel(ce)
+                        .setSystem(u.system())
+                        .setUrl(u.value());
+                ce.getUrls().add(cue);
+            }
+        }
+        // Store icons and other extras into JSONB meta for flexibility
+        Map<String, Object> meta = new HashMap<>();
+        if (dto.icons() != null && !dto.icons().isEmpty()) {
+            meta.put("icons", dto.icons()); // keep structure to preserve attributes
+        }
+        ce.setMeta(meta);
+        return ce;
     }
 
     public void addProgramme(ProgrammeEntity programme) {
@@ -64,11 +104,18 @@ public class ChannelEntity extends AuditEntity {
     public String getDisplayName() { return displayName; }
     public ChannelEntity setDisplayName(String displayName) { this.displayName = displayName; return this; }
 
-    public java.util.Map<String, Object> getMeta() { return meta; }
-    public ChannelEntity setMeta(java.util.Map<String, Object> meta) { this.meta = meta; return this; }
+    public Map<String, Object> getMeta() { return meta; }
+    public ChannelEntity setMeta(Map<String, Object> meta) { this.meta = (meta != null ? meta : new HashMap<>()); return this; }
+
 
     public List<ProgrammeEntity> getProgrammes() { return programmes; }
     public ChannelEntity setProgrammes(List<ProgrammeEntity> programmes) { this.programmes = programmes; return this; }
+
+    public List<ChannelDisplayNameEntity> getDisplayNames() { return displayNames; }
+    public ChannelEntity setDisplayNames(List<ChannelDisplayNameEntity> displayNames) { this.displayNames = displayNames; return this; }
+
+    public List<ChannelUrlEntity> getUrls() { return urls; }
+    public ChannelEntity setUrls(List<ChannelUrlEntity> urls) { this.urls = urls; return this; }
 
     public TvEntity getTv() {
         return tv;

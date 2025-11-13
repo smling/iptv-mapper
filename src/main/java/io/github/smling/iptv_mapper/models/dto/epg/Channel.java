@@ -11,19 +11,20 @@ public record Channel(
 
         @JacksonXmlElementWrapper(useWrapping = false)
         @JacksonXmlProperty(localName = "display-name")
-        List<String> displayNames,
+        List<Text> displayNames,
 
         @JacksonXmlElementWrapper(useWrapping = false)
         @JacksonXmlProperty(localName = "icon")
         List<Icon> icons,
 
+        @JacksonXmlElementWrapper(useWrapping = false)
         @JacksonXmlProperty(localName = "url")
-        String url
+        List<UrlRef> urls
 ) {
     public static Channel ofSingleName(String id, String displayName) {
         return new Channel(id,
-                displayName == null ? java.util.List.of() : java.util.List.of(displayName),
+                displayName == null ? java.util.List.of() : java.util.List.of(new Text(null, displayName)),
                 java.util.List.of(),
-                null);
+                java.util.List.of());
     }
 }
