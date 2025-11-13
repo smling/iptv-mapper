@@ -9,5 +9,8 @@ import java.util.UUID;
 
 public interface ChannelUrlRepository extends JpaRepository<ChannelUrlEntity, UUID> {
     List<ChannelUrlEntity> findByChannel_IdIn(Collection<UUID> channelIds);
-}
 
+    long deleteByChannel_Id(UUID channelId);
+
+    java.util.List<ChannelUrlEntity> findByChannel_Id(UUID channelId);
+}

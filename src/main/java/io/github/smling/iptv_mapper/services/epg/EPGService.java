@@ -24,6 +24,8 @@ import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamReader;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.net.InetAddress;
 import java.net.URI;
 import java.net.UnknownHostException;
@@ -54,9 +56,10 @@ public class EPGService extends IngestService {
                       ProgrammeRepository programmeRepository,
                       ChannelDisplayNameRepository channelDisplayNameRepository,
                       ChannelUrlRepository channelUrlRepository,
-                      @Value("${spring.application.name}") String appName, Environment environment
+                      @Value("${spring.application.name}") String appName, Environment environment,
+                      org.springframework.context.ApplicationContext applicationContext
     ) {
-        super(dataSourceRepo);
+        super(dataSourceRepo, applicationContext);
         this.clock = clock;
         this.tvRepository = tvRepository;
         this.channelRepository = channelRepository;
@@ -86,7 +89,14 @@ public class EPGService extends IngestService {
             // Download first to avoid premature EOF when parsing is slow due to DB writes
             java.nio.file.Path tmp = new EPGClient().downloadToTempFile(requestUri);
             logger.debug("💾 EPG downloaded to temp file: {}", tmp);
-            try (InputStream in = java.nio.file.Files.newInputStream(tmp)) {
+            // Some providers concatenate multiple XML documents and include repeated XML declarations.
+            // Sanitize by removing any XML declarations and BOMs, then wrap in a single synthetic root.
+            String raw = Files.readString(tmp, StandardCharsets.UTF_8);
+            String sanitized = raw
+                    .replace("\uFEFF", "")
+                    .replaceAll("(?is)<\\?xml[^>]*\\?>", "");
+            String wrapped = "<root>" + sanitized + "</root>";
+            try (java.io.InputStream in = new java.io.ByteArrayInputStream(wrapped.getBytes(StandardCharsets.UTF_8))) {
                 streamIngest(in, ds, urlCheck);
                 logger.info("✅ Completed EPG ingest for {}", requestUri);
             } finally {
@@ -124,7 +134,7 @@ public class EPGService extends IngestService {
                     final String genUrl  = tvGenUrl;
                     final long urlCheckMs = urlCheck.responseTimeMillis();
                     tvEntity  = tvRepository
-                            .findByGeneratorInfoNameAndGeneratorInfoUrl(tvGenName, tvGenUrl)
+                            .findByDataSource_Id(ds.getId())
                             .orElseGet(() -> {
                                 logger.debug("🆕 Created TvEntity gen='{}' url='{}' ({} ms)", genName, genUrl, urlCheckMs);
                                 return TvEntity.of(ds, new Tv(null, null, null, null, genName, genUrl, List.of(), List.of()), clock);
@@ -181,31 +191,53 @@ public class EPGService extends IngestService {
                         needUpdate = true;
                         logger.debug("✏️ Updated channel '{}' displayName -> '{}'", channelId, newName);
                     }
-                    // sync related display-names based on DTO
+                    // sync related display-names based on DTO using repositories (avoid lazy init)
                     if (!chDto.displayNames().isEmpty()) {
-                        chEntity.getDisplayNames().clear();
-                        int pos = 0;
-                        for (Text t : chDto.displayNames()) {
-                            ChannelDisplayNameEntity cd = new ChannelDisplayNameEntity()
-                                    .setChannel(chEntity)
-                                    .setLang(t.lang())
-                                    .setName(t.value())
-                                    .setPosition(pos++);
-                            chEntity.getDisplayNames().add(cd);
+                        var existingDns = channelDisplayNameRepository.findByChannel_IdOrderByPositionAsc(chEntity.getId());
+                        boolean same = existingDns.size() == chDto.displayNames().size();
+                        if (same) {
+                            for (int i = 0; i < existingDns.size(); i++) {
+                                var e = existingDns.get(i);
+                                var t = chDto.displayNames().get(i);
+                                if (!Objects.equals(e.getLang(), t.lang()) || !Objects.equals(e.getName(), t.value())) { same = false; break; }
+                            }
                         }
-                        needUpdate = true;
+                        if (!same) {
+                            channelDisplayNameRepository.deleteByChannel_Id(chEntity.getId());
+                            int pos = 0;
+                            java.util.List<ChannelDisplayNameEntity> items = new java.util.ArrayList<>();
+                            for (Text t : chDto.displayNames()) {
+                                items.add(new ChannelDisplayNameEntity()
+                                        .setChannel(chEntity)
+                                        .setLang(t.lang())
+                                        .setName(t.value())
+                                        .setPosition(pos++));
+                            }
+                            channelDisplayNameRepository.saveAll(items);
+                        }
                     }
-                    // sync urls based on DTO
+                    // sync urls based on DTO using repository
                     if (!chDto.urls().isEmpty()) {
-                        chEntity.getUrls().clear();
-                        for (UrlRef u : chDto.urls()) {
-                            ChannelUrlEntity cu = new ChannelUrlEntity()
-                                    .setChannel(chEntity)
-                                    .setSystem(u.system())
-                                    .setUrl(u.value());
-                            chEntity.getUrls().add(cu);
+                        var existingUrls = channelUrlRepository.findByChannel_Id(chEntity.getId());
+                        boolean same = existingUrls.size() == chDto.urls().size();
+                        if (same) {
+                            for (int i = 0; i < existingUrls.size(); i++) {
+                                var e = existingUrls.get(i);
+                                var u = chDto.urls().get(i);
+                                if (!Objects.equals(e.getSystem(), u.system()) || !Objects.equals(e.getUrl(), u.value())) { same = false; break; }
+                            }
                         }
-                        needUpdate = true;
+                        if (!same) {
+                            channelUrlRepository.deleteByChannel_Id(chEntity.getId());
+                            java.util.List<ChannelUrlEntity> items = new java.util.ArrayList<>();
+                            for (UrlRef u : chDto.urls()) {
+                                items.add(new ChannelUrlEntity()
+                                        .setChannel(chEntity)
+                                        .setSystem(u.system())
+                                        .setUrl(u.value()));
+                            }
+                            channelUrlRepository.saveAll(items);
+                        }
                     }
                     if (needUpdate) {
                         channelRepository.save(chEntity);
@@ -343,6 +375,13 @@ public class EPGService extends IngestService {
                             null);
                     var existingProg = programmeRepository
                             .findByChannel_IdAndStartTimeAndStopTime(chEntity.getId(), startTs, stopTs);
+                    if (existingProg.isEmpty()) {
+                        String firstTitleForMatch = titles.isEmpty() ? null : titles.get(0).value();
+                        if (firstTitleForMatch != null && !firstTitleForMatch.isBlank()) {
+                            existingProg = programmeRepository
+                                    .findByChannel_IdAndStartTimeAndStopTimeAndTitle(chEntity.getId(), startTs, stopTs, firstTitleForMatch);
+                        }
+                    }
 
                     if (existingProg.isPresent()) {
                         var prog = existingProg.get();
@@ -523,6 +562,10 @@ public class EPGService extends IngestService {
                     var stop  = EPGTimeParser.parse(p.stop());
                     var existingProg = programmeRepository
                             .findByChannel_IdAndStartTimeAndStopTime(chEntity.getId(), start, stop);
+                    if (existingProg.isEmpty() && t != null && !t.isBlank()) {
+                        existingProg = programmeRepository
+                                .findByChannel_IdAndStartTimeAndStopTimeAndTitle(chEntity.getId(), start, stop, t);
+                    }
 
                     if (existingProg.isPresent()) {
                         var prog = existingProg.get();

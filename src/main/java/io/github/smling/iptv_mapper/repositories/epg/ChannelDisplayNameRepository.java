@@ -9,5 +9,8 @@ import java.util.UUID;
 
 public interface ChannelDisplayNameRepository extends JpaRepository<ChannelDisplayNameEntity, UUID> {
     List<ChannelDisplayNameEntity> findByChannel_IdIn(Collection<UUID> channelIds);
-}
 
+    long deleteByChannel_Id(UUID channelId);
+
+    java.util.List<ChannelDisplayNameEntity> findByChannel_IdOrderByPositionAsc(UUID channelId);
+}

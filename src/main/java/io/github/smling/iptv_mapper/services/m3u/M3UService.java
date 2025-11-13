@@ -47,9 +47,10 @@ public class M3UService extends IngestService {
             DataSourceRepository dataSourceRepo,
             M3UPlaylistRepository playlistRepo,
             M3UItemRepository itemRepo, ChannelRepository channelRepository,
-            Clock clock, M3UItemChannelMapRepository m3UItemChannelMapRepository
+            Clock clock, M3UItemChannelMapRepository m3UItemChannelMapRepository,
+            org.springframework.context.ApplicationContext applicationContext
     ) {
-        super(dataSourceRepo);
+        super(dataSourceRepo, applicationContext);
         this.dataSourceRepo = dataSourceRepo;
         this.playlistRepo = playlistRepo;
         this.itemRepo = itemRepo;

@@ -41,6 +41,11 @@ public interface ProgrammeRepository extends JpaRepository<ProgrammeEntity, UUID
                                                                                 OffsetDateTime start,
                                                                                 OffsetDateTime stop);
 
+    java.util.Optional<ProgrammeEntity> findByChannel_IdAndStartTimeAndStopTimeAndTitle(UUID channelId,
+                                                                                        OffsetDateTime start,
+                                                                                        OffsetDateTime stop,
+                                                                                        String title);
+
     @Query("""
         SELECT p
           FROM ProgrammeEntity p

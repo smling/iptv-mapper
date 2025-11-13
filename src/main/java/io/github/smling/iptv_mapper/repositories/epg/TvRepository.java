@@ -8,7 +8,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface TvRepository extends JpaRepository<TvEntity, UUID> {
-    List<TvEntity> findByDataSource_Id(UUID dataSourceId);
+    Optional<TvEntity> findByDataSource_Id(UUID dataSourceId);
 
     boolean existsByDataSource_Id(UUID dataSourceId);
 
