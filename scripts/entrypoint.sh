@@ -4,7 +4,7 @@ set -eu
 DEFAULT_DIR="/tmp/otel"                            # writable on all images
 AGENT_DIR="${OTEL_AGENT_DIR:-$DEFAULT_DIR}"
 AGENT_PATH="$AGENT_DIR/opentelemetry-javaagent.jar"
-DEFAULT_OTEL_URL="https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/download/v2.8.0/opentelemetry-javaagent.jar"
+DEFAULT_OTEL_URL="https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/download/v2.21.0/opentelemetry-javaagent.jar"
 OTEL_URL="${OTEL_JAVA_AGENT_URL:-$DEFAULT_OTEL_URL}"
 TZ_VAL="${TZ:-UTC}"
 
