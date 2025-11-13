@@ -19,6 +19,13 @@ public class TvEntity extends AuditEntity {
     String generatorInfoName;
     String generatorInfoUrl;
 
+
+    @Column(name = "url_checker_result")
+    String urlCheckerResult;
+
+    @Column(name = "url_checker_ms")
+    Long urlCheckerMs;
+
     @OneToMany(mappedBy = "tv", cascade = CascadeType.ALL, orphanRemoval = true)
     List<ChannelEntity> channels;
 
@@ -61,6 +68,13 @@ public class TvEntity extends AuditEntity {
         this.generatorInfoUrl = generatorInfoUrl;
         return this;
     }
+
+
+    public String getUrlCheckerResult() { return urlCheckerResult; }
+    public TvEntity setUrlCheckerResult(String urlCheckerResult) { this.urlCheckerResult = urlCheckerResult; return this; }
+
+    public Long getUrlCheckerMs() { return urlCheckerMs; }
+    public TvEntity setUrlCheckerMs(Long urlCheckerMs) { this.urlCheckerMs = urlCheckerMs; return this; }
 
     public List<ChannelEntity> getChannels() {
         return channels;

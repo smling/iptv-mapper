@@ -51,10 +51,10 @@ public class M3UItemEntity extends AuditEntity {
     @Column(name = "url_checker_result")
     private String urlCheckerResult;
 
-    // Keep other attributes
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "attributes", columnDefinition = "jsonb", nullable = false)
-    private Map<String, String> attributes = new HashMap<>();
+    @Column(name = "url_checker_ms")
+    private Long urlCheckerMs;
+
+    // Deprecated legacy JSON attributes column removed from mapping to avoid duplication.
 
     /** JPA needs it */
     protected M3UItemEntity() {}
@@ -67,8 +67,7 @@ public class M3UItemEntity extends AuditEntity {
             String tvgId,
             String tvgName,
             String tvgLogo,
-            String groupTitle,
-            Map<String, String> attributes
+            String groupTitle
     ) {
         this.playlist = Objects.requireNonNull(playlist, "playlist is required");
         this.duration = duration;
@@ -78,7 +77,6 @@ public class M3UItemEntity extends AuditEntity {
         this.tvgName = tvgName;
         this.tvgLogo = tvgLogo;
         this.groupTitle = groupTitle;
-        if (attributes != null) this.attributes.putAll(attributes);
     }
 
     // ---------- Factory methods ----------
@@ -94,8 +92,7 @@ public class M3UItemEntity extends AuditEntity {
                 dto.tvgId(),
                 dto.tvgName(),
                 dto.tvgLogo() != null ? dto.tvgLogo().toString() : null,
-                dto.groupTitle(),
-                dto.extraAttributes()
+                dto.groupTitle()
         );
     }
 
@@ -108,12 +105,11 @@ public class M3UItemEntity extends AuditEntity {
             String tvgId,
             String tvgName,
             String tvgLogo,
-            String groupTitle,
-            Map<String, String> attributes
+            String groupTitle
     ) {
         return new M3UItemEntity(
                 playlist, duration, title, url,
-                tvgId, tvgName, tvgLogo, groupTitle, attributes
+                tvgId, tvgName, tvgLogo, groupTitle
         );
     }
 
@@ -151,9 +147,8 @@ public class M3UItemEntity extends AuditEntity {
     public String getUrlCheckerResult() { return urlCheckerResult; }
     public M3UItemEntity setUrlCheckerResult(String urlCheckerResult) { this.urlCheckerResult = urlCheckerResult; return this; }
 
-    public Map<String, String> getAttributes() { return attributes; }
-    public M3UItemEntity setAttributes(Map<String, String> attributes) {
-        this.attributes = (attributes == null) ? new HashMap<>() : new HashMap<>(attributes);
-        return this;
-    }
+    public Long getUrlCheckerMs() { return urlCheckerMs; }
+    public M3UItemEntity setUrlCheckerMs(Long urlCheckerMs) { this.urlCheckerMs = urlCheckerMs; return this; }
+
+    // attributes JSON column intentionally unmapped/removed
 }

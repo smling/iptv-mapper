@@ -2,22 +2,15 @@ package io.github.smling.iptv_mapper.services.epg;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import io.github.smling.iptv_mapper.EPGClient;
-import io.github.smling.iptv_mapper.StringUtil;
 import io.github.smling.iptv_mapper.UriChecker;
 import io.github.smling.iptv_mapper.factories.XmlMapperFactory;
 import io.github.smling.iptv_mapper.models.DataSourceType;
 import io.github.smling.iptv_mapper.models.dao.DataSourceEntity;
-import io.github.smling.iptv_mapper.models.dao.epg.ChannelEntity;
-import io.github.smling.iptv_mapper.models.dao.epg.ProgrammeEntity;
-import io.github.smling.iptv_mapper.models.dao.epg.TvEntity;
-import io.github.smling.iptv_mapper.models.dto.epg.Channel;
-import io.github.smling.iptv_mapper.models.dto.epg.Programme;
-import io.github.smling.iptv_mapper.models.dto.epg.Tv;
+import io.github.smling.iptv_mapper.models.dao.epg.*;
+import io.github.smling.iptv_mapper.models.dto.epg.*;
 import io.github.smling.iptv_mapper.parsers.EPGTimeParser;
 import io.github.smling.iptv_mapper.repositories.DataSourceRepository;
-import io.github.smling.iptv_mapper.repositories.epg.ChannelRepository;
-import io.github.smling.iptv_mapper.repositories.epg.ProgrammeRepository;
-import io.github.smling.iptv_mapper.repositories.epg.TvRepository;
+import io.github.smling.iptv_mapper.repositories.epg.*;
 import io.github.smling.iptv_mapper.services.IngestService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,6 +18,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 
+import javax.xml.stream.XMLInputFactory;
+import javax.xml.stream.XMLStreamConstants;
+import javax.xml.stream.XMLStreamException;
+import javax.xml.stream.XMLStreamReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetAddress;
@@ -35,13 +32,8 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
 import java.util.Map;
-import javax.xml.stream.XMLInputFactory;
-import javax.xml.stream.XMLStreamConstants;
-import javax.xml.stream.XMLStreamException;
-import javax.xml.stream.XMLStreamReader;
+import java.util.Objects;
 
 @Service
 public class EPGService extends IngestService {
@@ -50,6 +42,8 @@ public class EPGService extends IngestService {
     private final TvRepository tvRepository;
     private final ChannelRepository channelRepository;
     private final ProgrammeRepository programmeRepository;
+    private final ChannelDisplayNameRepository channelDisplayNameRepository;
+    private final ChannelUrlRepository channelUrlRepository;
     private final String appName;
     private final Environment environment;
 
@@ -58,6 +52,8 @@ public class EPGService extends IngestService {
                       TvRepository tvRepository,
                       ChannelRepository channelRepository,
                       ProgrammeRepository programmeRepository,
+                      ChannelDisplayNameRepository channelDisplayNameRepository,
+                      ChannelUrlRepository channelUrlRepository,
                       @Value("${spring.application.name}") String appName, Environment environment
     ) {
         super(dataSourceRepo);
@@ -65,6 +61,8 @@ public class EPGService extends IngestService {
         this.tvRepository = tvRepository;
         this.channelRepository = channelRepository;
         this.programmeRepository = programmeRepository;
+        this.channelDisplayNameRepository = channelDisplayNameRepository;
+        this.channelUrlRepository = channelUrlRepository;
         this.appName = appName;
         this.environment = environment;
     }
@@ -77,8 +75,9 @@ public class EPGService extends IngestService {
     @Override
     public void ingestOneInTx(DataSourceEntity ds) {
         URI requestUri = URI.create(ds.getUrl());
-        if(!new UriChecker().isUrlReachable(requestUri)) {
-            logger.debug("⏭️ Skip data source {} (type={}, enabled={})", ds.getId(), ds.getType(), ds.isEnabled());
+        var urlCheck = new UriChecker().check(requestUri);
+        if(!urlCheck.isReachable()) {
+            logger.debug("⏭️ Skip data source {} (type={}, enabled={}, check={} ms)", ds.getId(), ds.getType(), ds.isEnabled(), urlCheck.responseTimeMillis());
             return; // do not attempt fetch if not reachable
         }
 
@@ -88,7 +87,7 @@ public class EPGService extends IngestService {
             java.nio.file.Path tmp = new EPGClient().downloadToTempFile(requestUri);
             logger.debug("💾 EPG downloaded to temp file: {}", tmp);
             try (InputStream in = java.nio.file.Files.newInputStream(tmp)) {
-                streamIngest(in, ds);
+                streamIngest(in, ds, urlCheck);
                 logger.info("✅ Completed EPG ingest for {}", requestUri);
             } finally {
                 try { java.nio.file.Files.deleteIfExists(tmp); } catch (Exception ignore) {}
@@ -101,7 +100,7 @@ public class EPGService extends IngestService {
         }
     }
 
-    private void streamIngest(InputStream in, DataSourceEntity ds) {
+    private void streamIngest(InputStream in, DataSourceEntity ds, UriChecker.UrlCheckResult urlCheck) {
         XMLInputFactory f = XMLInputFactory.newFactory();
         XMLStreamReader r = null;
         try {
@@ -121,58 +120,181 @@ public class EPGService extends IngestService {
                 if ("tv".equals(name)) {
                     tvGenName = attr(r, "generator-info-name");
                     tvGenUrl  = attr(r, "generator-info-url");
-                    Optional<TvEntity> existing = tvRepository
-                            .findByGeneratorInfoNameAndGeneratorInfoUrl(tvGenName, tvGenUrl);
-                    if (existing.isPresent()) {
-                        tvEntity = existing.get();
-                        logger.debug("🔁 Reusing TvEntity id={} gen='{}' url='{}'", tvEntity.getId(), tvGenName, tvGenUrl);
-                    } else {
-                        tvEntity = tvRepository.save(TvEntity.of(ds, new Tv(null, null, tvGenName, tvGenUrl, List.of(), List.of()), clock));
-                        logger.debug("🆕 Created TvEntity gen='{}' url='{}'", tvGenName, tvGenUrl);
-                    }
+                    final String genName = tvGenName;
+                    final String genUrl  = tvGenUrl;
+                    final long urlCheckMs = urlCheck.responseTimeMillis();
+                    tvEntity  = tvRepository
+                            .findByGeneratorInfoNameAndGeneratorInfoUrl(tvGenName, tvGenUrl)
+                            .orElseGet(() -> {
+                                logger.debug("🆕 Created TvEntity gen='{}' url='{}' ({} ms)", genName, genUrl, urlCheckMs);
+                                return TvEntity.of(ds, new Tv(null, null, null, null, genName, genUrl, List.of(), List.of()), clock);
+                            });
+
+                    // Update checker timing on tv record
+                    tvEntity.setUrlCheckerResult(urlCheck.status().name())
+                            .setUrlCheckerMs(urlCheck.responseTimeMillis())
+                    ;
+                    tvEntity = tvRepository.save(tvEntity);
                 } else if ("channel".equals(name)) {
                     if (tvEntity == null) continue; // safeguard
-                    String chId = attr(r, "id");
+                    String channelId = attr(r, "id");
                     String displayName = null;
+                    String displayNameLang = null;
+                    List<UrlRef> urlRefs = new java.util.ArrayList<>();
+
                     // descend until end of channel
                     while (r.hasNext()) {
                         int inner = r.next();
+                        logger.trace("Current Xml element attribute: {}", inner);
                         if (inner == XMLStreamConstants.START_ELEMENT && "display-name".equals(r.getLocalName())) {
+                            displayNameLang = attr(r, "lang");
                             displayName = text(r);
+                        } else if (inner == XMLStreamConstants.START_ELEMENT && "url".equals(r.getLocalName())) {
+                            String sys = attr(r, "system");
+                            String val = text(r);
+                            urlRefs.add(new UrlRef(sys, val));
                         } else if (inner == XMLStreamConstants.END_ELEMENT && "channel".equals(r.getLocalName())) {
                             break;
                         }
                     }
-                    Optional<ChannelEntity> chOpt = channelRepository.findByTv_IdAndChannelId(tvEntity.getId(), chId)
-                            .or(() -> channelRepository.findByChannelId(chId));
-                    ChannelEntity chEntity;
-                    if (chOpt.isPresent()) {
-                        chEntity = chOpt.get();
-                    } else {
-                        chEntity = channelRepository.save(ChannelEntity.of(tvEntity, Channel.ofSingleName(chId, displayName)));
-                        chCreated++;
-                        logger.debug("➕ Inserted channel '{}' ('{}')", chId, displayName);
+                    // Build DTO first for clearer downstream logic
+                    Channel chDto = new Channel(
+                            channelId,
+                            (displayName == null ? List.of() : List.of(new Text(displayNameLang, displayName))),
+                            List.of(),
+                            urlRefs
+                    );
+                    boolean needUpdate = false;
+                    String finalDisplayName = displayName;
+                    TvEntity finalTvEntity = tvEntity;
+                    ChannelEntity chEntity = channelRepository.findByTv_IdAndChannelId(tvEntity.getId(), channelId)
+                            .or(() -> channelRepository.findByChannelId(channelId))
+                            .orElseGet(() ->{
+                                logger.debug("➕ Inserted channel '{}' ('{}')", channelId, finalDisplayName);
+                                return channelRepository.save(ChannelEntity.of(finalTvEntity, chDto));
+                            })
+                            ;
+                    // Derive newName from DTO
+                    String newName = (!chDto.displayNames().isEmpty() ? chDto.displayNames().getFirst().value() : null);
+                    if (!Objects.equals(chEntity.getDisplayName(), newName) && newName != null) {
+                        chEntity.setDisplayName(newName);
+                        needUpdate = true;
+                        logger.debug("✏️ Updated channel '{}' displayName -> '{}'", channelId, newName);
                     }
-                    if (!Objects.equals(chEntity.getDisplayName(), displayName) && displayName != null) {
-                        chEntity.setDisplayName(displayName);
+                    // sync related display-names based on DTO
+                    if (!chDto.displayNames().isEmpty()) {
+                        chEntity.getDisplayNames().clear();
+                        int pos = 0;
+                        for (Text t : chDto.displayNames()) {
+                            ChannelDisplayNameEntity cd = new ChannelDisplayNameEntity()
+                                    .setChannel(chEntity)
+                                    .setLang(t.lang())
+                                    .setName(t.value())
+                                    .setPosition(pos++);
+                            chEntity.getDisplayNames().add(cd);
+                        }
+                        needUpdate = true;
+                    }
+                    // sync urls based on DTO
+                    if (!chDto.urls().isEmpty()) {
+                        chEntity.getUrls().clear();
+                        for (UrlRef u : chDto.urls()) {
+                            ChannelUrlEntity cu = new ChannelUrlEntity()
+                                    .setChannel(chEntity)
+                                    .setSystem(u.system())
+                                    .setUrl(u.value());
+                            chEntity.getUrls().add(cu);
+                        }
+                        needUpdate = true;
+                    }
+                    if (needUpdate) {
                         channelRepository.save(chEntity);
                         chUpdated++;
-                        logger.debug("✏️ Updated channel '{}' displayName -> '{}'", chId, displayName);
                     }
-                    channelCache.put(chId, chEntity);
+                    channelCache.put(channelId, chEntity);
                 } else if ("programme".equals(name)) {
                     String start = attr(r, "start");
                     String stop  = attr(r, "stop");
                     String chRef = attr(r, "channel");
-                    String title = null;
-                    String desc  = null;
+                    // Build DTO pieces while traversing XML to avoid missing fields
+                    java.util.List<Text> titles = new java.util.ArrayList<>();
+                    java.util.List<Text> subTitles = new java.util.ArrayList<>();
+                    java.util.List<Text> descs = new java.util.ArrayList<>();
+                    String date = null;
+                    java.util.List<Text> categories = new java.util.ArrayList<>();
+                    java.util.List<Text> keywords = new java.util.ArrayList<>();
+                    java.util.List<Text> languages = new java.util.ArrayList<>();
+                    Text origLanguage = null;
+                    ProgrammeLength length = null;
+                    java.util.List<Icon> icons = new java.util.ArrayList<>();
+                    java.util.List<UrlRef> urls = new java.util.ArrayList<>();
+                    java.util.List<String> countries = new java.util.ArrayList<>();
+                    java.util.List<EpisodeNumber> episodeNums = new java.util.ArrayList<>();
+                    Video video = null;
+                    Audio audio = null;
+                    PreviouslyShown previouslyShown = null;
+                    Text premiere = null;
+                    Text lastChance = null;
+                    Empty isNew = null;
+                    java.util.List<Subtitles> subtitles = new java.util.ArrayList<>();
+                    java.util.List<Rating> ratings = new java.util.ArrayList<>();
+                    java.util.List<StarRating> starRatings = new java.util.ArrayList<>();
+                    java.util.List<Review> reviews = new java.util.ArrayList<>();
+                    java.util.List<Image> images = new java.util.ArrayList<>();
 
                     while (r.hasNext()) {
                         int inner = r.next();
                         if (inner == XMLStreamConstants.START_ELEMENT) {
                             String ln = r.getLocalName();
-                            if ("title".equals(ln)) { title = text(r); }
-                            else if ("desc".equals(ln)) { desc = text(r); }
+                            if ("title".equals(ln)) {
+                                titles.add(new Text(attr(r, "lang"), text(r)));
+                            } else if ("sub-title".equals(ln)) {
+                                subTitles.add(new Text(attr(r, "lang"), text(r)));
+                            } else if ("desc".equals(ln)) {
+                                descs.add(new Text(attr(r, "lang"), text(r)));
+                            } else if ("date".equals(ln)) {
+                                date = text(r);
+                            } else if ("category".equals(ln)) {
+                                categories.add(new Text(attr(r, "lang"), text(r)));
+                            } else if ("keyword".equals(ln)) {
+                                keywords.add(new Text(attr(r, "lang"), text(r)));
+                            } else if ("language".equals(ln)) {
+                                languages.add(new Text(attr(r, "lang"), text(r)));
+                            } else if ("orig-language".equals(ln)) {
+                                origLanguage = new Text(attr(r, "lang"), text(r));
+                            } else if ("length".equals(ln)) {
+                                length = new ProgrammeLength(attr(r, "units"), text(r));
+                            } else if ("icon".equals(ln)) {
+                                icons.add(new Icon(attr(r, "src"), attr(r, "width"), attr(r, "height")));
+                            } else if ("url".equals(ln)) {
+                                urls.add(new UrlRef(attr(r, "system"), text(r)));
+                            } else if ("country".equals(ln)) {
+                                countries.add(text(r));
+                            } else if ("episode-num".equals(ln)) {
+                                episodeNums.add(new EpisodeNumber(attr(r, "system"), text(r)));
+                            } else if ("video".equals(ln)) {
+                                video = parseVideo(r);
+                            } else if ("audio".equals(ln)) {
+                                audio = parseAudio(r);
+                            } else if ("previously-shown".equals(ln)) {
+                                previouslyShown = new PreviouslyShown(attr(r, "start"), attr(r, "channel"));
+                            } else if ("premiere".equals(ln)) {
+                                premiere = new Text(attr(r, "lang"), text(r));
+                            } else if ("last-chance".equals(ln)) {
+                                lastChance = new Text(attr(r, "lang"), text(r));
+                            } else if ("new".equals(ln)) {
+                                isNew = new Empty();
+                            } else if ("subtitles".equals(ln)) {
+                                subtitles.add(parseSubtitles(r));
+                            } else if ("rating".equals(ln)) {
+                                ratings.add(parseRating(r));
+                            } else if ("star-rating".equals(ln)) {
+                                starRatings.add(parseStarRating(r));
+                            } else if ("review".equals(ln)) {
+                                reviews.add(parseReview(r));
+                            } else if ("image".equals(ln)) {
+                                images.add(parseImage(r));
+                            }
                         } else if (inner == XMLStreamConstants.END_ELEMENT && "programme".equals(r.getLocalName())) {
                             break;
                         }
@@ -189,18 +311,49 @@ public class EPGService extends IngestService {
 
                     var startTs = EPGTimeParser.parse(start);
                     var stopTs  = EPGTimeParser.parse(stop);
+                    // Build DTO from parsed values
+                    Programme pDto = new Programme(
+                            start, stop, chRef,
+                            null, null, null, null, null,
+                            titles,
+                            subTitles,
+                            descs,
+                            null,
+                            date,
+                            categories,
+                            keywords,
+                            languages,
+                            origLanguage,
+                            length,
+                            icons,
+                            urls,
+                            countries,
+                            episodeNums,
+                            video,
+                            audio,
+                            previouslyShown,
+                            premiere,
+                            lastChance,
+                            isNew,
+                            subtitles,
+                            ratings,
+                            starRatings,
+                            reviews,
+                            images,
+                            null);
                     var existingProg = programmeRepository
                             .findByChannel_IdAndStartTimeAndStopTime(chEntity.getId(), startTs, stopTs);
 
                     if (existingProg.isPresent()) {
                         var prog = existingProg.get();
+                        String firstTitle = titles.isEmpty() ? null : titles.get(0).value();
+                        String firstDesc  = descs.isEmpty() ? null : descs.get(0).value();
                         boolean changed = false;
-                        if (!Objects.equals(prog.getTitle(), title)) { prog.setTitle(title); changed = true; }
-                        if (!Objects.equals(prog.getDescription(), desc)) { prog.setDescription(desc); changed = true; }
+                        if (!Objects.equals(prog.getTitle(), firstTitle)) { prog.setTitle(firstTitle); changed = true; }
+                        if (!Objects.equals(prog.getDescription(), firstDesc)) { prog.setDescription(firstDesc); changed = true; }
                         if (changed) { programmeRepository.save(prog); progUpdated++; }
                     } else {
-                        programmeRepository.save(ProgrammeEntity.of(chEntity,
-                                new Programme(start, stop, chRef, title, desc, List.of(), List.of(), List.of())));
+                        programmeRepository.save(ProgrammeEntity.of(chEntity, pDto));
                         progCreated++;
                     }
                 }
@@ -232,6 +385,104 @@ public class EPGService extends IngestService {
         return sb.toString();
     }
 
+    private static Video parseVideo(XMLStreamReader r) throws XMLStreamException {
+        String present = null, colour = null, aspect = null, quality = null;
+        while (r.hasNext()) {
+            int ev = r.next();
+            if (ev == XMLStreamConstants.START_ELEMENT) {
+                String ln = r.getLocalName();
+                if ("present".equals(ln)) present = text(r);
+                else if ("colour".equals(ln)) colour = text(r);
+                else if ("aspect".equals(ln)) aspect = text(r);
+                else if ("quality".equals(ln)) quality = text(r);
+            } else if (ev == XMLStreamConstants.END_ELEMENT && "video".equals(r.getLocalName())) {
+                break;
+            }
+        }
+        return new Video(present, colour, aspect, quality);
+    }
+
+    private static Audio parseAudio(XMLStreamReader r) throws XMLStreamException {
+        String present = null, stereo = null;
+        while (r.hasNext()) {
+            int ev = r.next();
+            if (ev == XMLStreamConstants.START_ELEMENT) {
+                String ln = r.getLocalName();
+                if ("present".equals(ln)) present = text(r);
+                else if ("stereo".equals(ln)) stereo = text(r);
+            } else if (ev == XMLStreamConstants.END_ELEMENT && "audio".equals(r.getLocalName())) {
+                break;
+            }
+        }
+        return new Audio(present, stereo);
+    }
+
+    private static Subtitles parseSubtitles(XMLStreamReader r) throws XMLStreamException {
+        String type = attr(r, "type");
+        java.util.List<Text> langs = new java.util.ArrayList<>();
+        while (r.hasNext()) {
+            int ev = r.next();
+            if (ev == XMLStreamConstants.START_ELEMENT && "language".equals(r.getLocalName())) {
+                langs.add(new Text(attr(r, "lang"), text(r)));
+            } else if (ev == XMLStreamConstants.END_ELEMENT && "subtitles".equals(r.getLocalName())) {
+                break;
+            }
+        }
+        return new Subtitles(type, langs);
+    }
+
+    private static Rating parseRating(XMLStreamReader r) throws XMLStreamException {
+        String system = attr(r, "system");
+        String value = null;
+        java.util.List<Icon> icons = new java.util.ArrayList<>();
+        while (r.hasNext()) {
+            int ev = r.next();
+            if (ev == XMLStreamConstants.START_ELEMENT) {
+                String ln = r.getLocalName();
+                if ("value".equals(ln)) value = text(r);
+                else if ("icon".equals(ln)) icons.add(new Icon(attr(r, "src"), attr(r, "width"), attr(r, "height")));
+            } else if (ev == XMLStreamConstants.END_ELEMENT && "rating".equals(r.getLocalName())) {
+                break;
+            }
+        }
+        return new Rating(system, value, icons);
+    }
+
+    private static StarRating parseStarRating(XMLStreamReader r) throws XMLStreamException {
+        String system = attr(r, "system");
+        String value = null;
+        java.util.List<Icon> icons = new java.util.ArrayList<>();
+        while (r.hasNext()) {
+            int ev = r.next();
+            if (ev == XMLStreamConstants.START_ELEMENT) {
+                String ln = r.getLocalName();
+                if ("value".equals(ln)) value = text(r);
+                else if ("icon".equals(ln)) icons.add(new Icon(attr(r, "src"), attr(r, "width"), attr(r, "height")));
+            } else if (ev == XMLStreamConstants.END_ELEMENT && "star-rating".equals(r.getLocalName())) {
+                break;
+            }
+        }
+        return new StarRating(system, value, icons);
+    }
+
+    private static Review parseReview(XMLStreamReader r) throws XMLStreamException {
+        String type = attr(r, "type");
+        String source = attr(r, "source");
+        String reviewer = attr(r, "reviewer");
+        String lang = attr(r, "lang");
+        String value = text(r);
+        return new Review(type, source, reviewer, lang, value);
+    }
+
+    private static Image parseImage(XMLStreamReader r) throws XMLStreamException {
+        String type = attr(r, "type");
+        String size = attr(r, "size");
+        String orient = attr(r, "orient");
+        String system = attr(r, "system");
+        String value = text(r);
+        return new Image(type, size, orient, system, value);
+    }
+
     private void upsertChannelsAndProgrammes(Tv tv, TvEntity tvEntity) {
         if(tv.channels().isEmpty()) return;
         var channels = tv.channels();
@@ -244,7 +495,7 @@ public class EPGService extends IngestService {
             ChannelEntity chEntity;
             if (existingCh.isPresent()) {
                 chEntity = existingCh.get();
-                String newName = (chDto.displayNames() != null && !chDto.displayNames().isEmpty()) ? chDto.displayNames().get(0) : null;
+                String newName = (chDto.displayNames() != null && !chDto.displayNames().isEmpty()) ? chDto.displayNames().get(0).value() : null;
                 if (!Objects.equals(chEntity.getDisplayName(), newName)) {
                     chEntity.setDisplayName(newName);
                     channelRepository.save(chEntity);
@@ -266,6 +517,8 @@ public class EPGService extends IngestService {
         allProgrammes.stream()
                 .filter(p -> Objects.equals(chDto.id(), p.channel()))
                 .forEach(p -> {
+                    String t = (p.titles() != null && !p.titles().isEmpty()) ? p.titles().get(0).value() : null;
+                    String d = (p.descs() != null && !p.descs().isEmpty()) ? p.descs().get(0).value() : null;
                     var start = EPGTimeParser.parse(p.start());
                     var stop  = EPGTimeParser.parse(p.stop());
                     var existingProg = programmeRepository
@@ -274,12 +527,12 @@ public class EPGService extends IngestService {
                     if (existingProg.isPresent()) {
                         var prog = existingProg.get();
                         boolean changed = false;
-                        if (!Objects.equals(prog.getTitle(), p.title())) {
-                            prog.setTitle(p.title());
+                        if (!Objects.equals(prog.getTitle(), t)) {
+                            prog.setTitle(t);
                             changed = true;
                         }
-                        if (!Objects.equals(prog.getDescription(), p.desc())) {
-                            prog.setDescription(p.desc());
+                        if (!Objects.equals(prog.getDescription(), d)) {
+                            prog.setDescription(d);
                             changed = true;
                         }
                         if (changed) programmeRepository.save(prog);
@@ -320,37 +573,43 @@ public class EPGService extends IngestService {
         var end   = (to == null ? nowUtc.plusHours(24) : to.withOffsetSameInstant(ZoneOffset.UTC));
 
         // 1) Channels → DTO
-        var channels = channelRepository.findAllChannelsWithMappingId().stream()
-                .map(c -> {
-                    String id = c.getXmltvId();
-                    String name = c.getDisplayName();
-                    if (name == null || name.isBlank()) {
-                        name = id; // XMLTV requires at least one <display-name>
-                    }
-                    return Channel.ofSingleName(id, name);
-                })
-                .toList();
+        var rows = channelRepository.findAllChannelsForEpg();
+        var channelIds = rows.stream().map(io.github.smling.iptv_mapper.models.dto.epg.ChannelEpgRow::getChannelDbId).toList();
+        var names = channelDisplayNameRepository.findByChannel_IdIn(channelIds).stream().collect(java.util.stream.Collectors.groupingBy(e -> e.getChannel().getId()));
+        var urls  = channelUrlRepository.findByChannel_IdIn(channelIds).stream().collect(java.util.stream.Collectors.groupingBy(e -> e.getChannel().getId()));
 
-        // 2) Programmes → DTO (format timestamps as "yyyyMMddHHmmss +0000")
-        var progs = programmeRepository.findProgrammesBetween(start, end).stream()
-                .map(p -> new Programme(
-                        EPGTimeParser.toIsoInstantString(p.getStartUtc()),
-                        EPGTimeParser.toIsoInstantString(p.getStopUtc()),
-                        p.getChannelXmltvId(),
-                        StringUtil.nullSafe(p.getTitle()),
-                        StringUtil.nullSafe(p.getDesc()),
-                        List.of(),
-                        List.of(),
-                        List.of()
-                ))
+        var channels = rows.stream().map(r -> {
+            var dnList = new java.util.ArrayList<io.github.smling.iptv_mapper.models.dto.epg.Text>();
+            var byId = names.get(r.getChannelDbId());
+            if (byId != null && !byId.isEmpty()) {
+                byId.stream().sorted(java.util.Comparator.comparing(e -> e.getPosition() == null ? 0 : e.getPosition()))
+                        .forEach(e -> dnList.add(new io.github.smling.iptv_mapper.models.dto.epg.Text(e.getLang(), e.getName())));
+            } else {
+                String fallback = r.getDisplayName();
+                if (fallback == null || fallback.isBlank()) fallback = r.getXmltvId();
+                dnList.add(new io.github.smling.iptv_mapper.models.dto.epg.Text(null, fallback));
+            }
+            var urlList = new java.util.ArrayList<io.github.smling.iptv_mapper.models.dto.epg.UrlRef>();
+            var urlById = urls.get(r.getChannelDbId());
+            if (urlById != null) {
+                urlById.forEach(u -> urlList.add(new io.github.smling.iptv_mapper.models.dto.epg.UrlRef(u.getSystem(), u.getUrl())));
+            }
+            return new io.github.smling.iptv_mapper.models.dto.epg.Channel(r.getXmltvId(), dnList, java.util.List.of(), urlList);
+        }).toList();
+
+        // 2) Programmes → DTO via entity mapping to keep in sync
+        var progs = programmeRepository.findEntitiesBetween(start, end).stream()
+                .map(io.github.smling.iptv_mapper.models.dto.epg.Programme::fromEntity)
                 .toList();
 
         // 3) Tv root
         var tv = new Tv(
-                null,                       // source-info-name
-                null,                       // source-info-url
-                appName,                    // generator-info-name
-                getGeneratorInfoUrl(),      // generator-info-url
+                null, // date
+                null, // source-info-name
+                null, // source-info-url
+                null, // source-data-url
+                appName, // generator-info-name
+                getGeneratorInfoUrl(), // generator-info-url
                 channels,
                 progs
         );
@@ -367,35 +626,41 @@ public class EPGService extends IngestService {
         var start = (from == null ? nowUtc : from.withOffsetSameInstant(ZoneOffset.UTC));
         var end   = (to == null ? nowUtc.plusHours(24) : to.withOffsetSameInstant(ZoneOffset.UTC));
 
-        var channels = channelRepository.findAllChannelsWithMappingId().stream()
-                .map(c -> {
-                    String id = c.getXmltvId();
-                    String name = c.getDisplayName();
-                    if (name == null || name.isBlank()) {
-                        name = id; // XMLTV requires at least one <display-name>
-                    }
-                    return Channel.ofSingleName(id, name);
-                })
-                .toList();
+        var rows = channelRepository.findAllChannelsForEpg();
+        var channelIds = rows.stream().map(io.github.smling.iptv_mapper.models.dto.epg.ChannelEpgRow::getChannelDbId).toList();
+        var names = channelDisplayNameRepository.findByChannel_IdIn(channelIds).stream().collect(java.util.stream.Collectors.groupingBy(e -> e.getChannel().getId()));
+        var urls  = channelUrlRepository.findByChannel_IdIn(channelIds).stream().collect(java.util.stream.Collectors.groupingBy(e -> e.getChannel().getId()));
 
-        var progs = programmeRepository.findProgrammesBetween(start, end).stream()
-                .map(p -> new Programme(
-                        EPGTimeParser.toIsoInstantString(p.getStartUtc()),
-                        EPGTimeParser.toIsoInstantString(p.getStopUtc()),
-                        p.getChannelXmltvId(),
-                        StringUtil.nullSafe(p.getTitle()),
-                        StringUtil.nullSafe(p.getDesc()),
-                        List.of(),
-                        List.of(),
-                        List.of()
-                ))
+        var channels = rows.stream().map(r -> {
+            var dnList = new java.util.ArrayList<io.github.smling.iptv_mapper.models.dto.epg.Text>();
+            var byId = names.get(r.getChannelDbId());
+            if (byId != null && !byId.isEmpty()) {
+                byId.stream().sorted(java.util.Comparator.comparing(e -> e.getPosition() == null ? 0 : e.getPosition()))
+                        .forEach(e -> dnList.add(new io.github.smling.iptv_mapper.models.dto.epg.Text(e.getLang(), e.getName())));
+            } else {
+                String fallback = r.getDisplayName();
+                if (fallback == null || fallback.isBlank()) fallback = r.getXmltvId();
+                dnList.add(new io.github.smling.iptv_mapper.models.dto.epg.Text(null, fallback));
+            }
+            var urlList = new java.util.ArrayList<io.github.smling.iptv_mapper.models.dto.epg.UrlRef>();
+            var urlById = urls.get(r.getChannelDbId());
+            if (urlById != null) {
+                urlById.forEach(u -> urlList.add(new io.github.smling.iptv_mapper.models.dto.epg.UrlRef(u.getSystem(), u.getUrl())));
+            }
+            return new io.github.smling.iptv_mapper.models.dto.epg.Channel(r.getXmltvId(), dnList, java.util.List.of(), urlList);
+        }).toList();
+
+        var progs = programmeRepository.findEntitiesBetween(start, end).stream()
+                .map(io.github.smling.iptv_mapper.models.dto.epg.Programme::fromEntity)
                 .toList();
 
         var tv = new Tv(
-                null,
-                null,
-                appName,
-                getGeneratorInfoUrl(),
+                null, // date
+                null, // source-info-name
+                null, // source-info-url
+                null, // source-data-url
+                appName, // generator-info-name
+                getGeneratorInfoUrl(), // generator-info-url
                 channels,
                 progs
         );

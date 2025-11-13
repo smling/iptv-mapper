@@ -37,6 +37,16 @@ public interface ChannelRepository extends JpaRepository<ChannelEntity, String> 
     List<ChannelLineView> findAllChannelsWithMappingId();
 
     @Query(value = """
+        SELECT c.id          AS channelDbId,
+               map.id        AS xmltvId,
+               c.display_name AS displayName
+          FROM m3u_item_channel_map map
+          JOIN channel c ON c.id = map.channel_id
+         ORDER BY c.display_name NULLS LAST, c.id
+        """, nativeQuery = true)
+    List<io.github.smling.iptv_mapper.models.dto.epg.ChannelEpgRow> findAllChannelsForEpg();
+
+    @Query(value = """
         SELECT
           c.id            AS channelDbId,
           c.channel_id    AS channelId,

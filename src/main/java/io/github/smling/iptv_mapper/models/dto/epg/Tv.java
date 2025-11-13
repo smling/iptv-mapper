@@ -9,11 +9,17 @@ import java.util.List;
 
 @JacksonXmlRootElement(localName = "tv")
 public record Tv(
+        @JacksonXmlProperty(isAttribute = true, localName = "date")
+        String date,
+
         @JacksonXmlProperty(isAttribute = true, localName = "source-info-name")
         String sourceInfoName,
 
         @JacksonXmlProperty(isAttribute = true, localName = "source-info-url")
         String sourceInfoUrl,
+
+        @JacksonXmlProperty(isAttribute = true, localName = "source-data-url")
+        String sourceDataUrl,
 
         @JacksonXmlProperty(isAttribute = true, localName = "generator-info-name")
         String generatorInfoName,

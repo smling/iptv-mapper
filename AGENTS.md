@@ -19,6 +19,9 @@
 - Packages: lowercase (`io.github.smling.iptv_mapper...`). Classes: `PascalCase`. Methods/fields: `camelCase`. Constants: `UPPER_SNAKE_CASE`.
 - Prefer constructor injection for services/components. Keep controllers thin; push logic to services.
 - Files should live under matching package directories; one top-level class per file.
+- Use `import` statements instead of fully qualified class names in code to keep files concise. Only use fully qualified names to resolve rare naming clashes.
+- DAOs: implement as classes (not records). For object creation, prefer a static factory method named `of(...)` over public constructors.
+- DTOs: may be defined as Java `record` types where appropriate.
 
 ## Testing Guidelines
 - Frameworks: JUnit 5; Testcontainers (PostgreSQL) where needed.
