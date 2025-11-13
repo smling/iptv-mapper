@@ -90,17 +90,41 @@ public class EPGService extends IngestService {
             java.nio.file.Path tmp = new EPGClient().downloadToTempFile(requestUri);
             logger.debug("💾 EPG downloaded to temp file: {}", tmp);
             // Some providers concatenate multiple XML documents and include repeated XML declarations.
-            // Sanitize by removing any XML declarations and BOMs, then wrap in a single synthetic root.
-            String raw = Files.readString(tmp, StandardCharsets.UTF_8);
-            String sanitized = raw
-                    .replace("\uFEFF", "")
-                    .replaceAll("(?is)<\\?xml[^>]*\\?>", "");
-            String wrapped = "<root>" + sanitized + "</root>";
-            try (java.io.InputStream in = new java.io.ByteArrayInputStream(wrapped.getBytes(StandardCharsets.UTF_8))) {
-                streamIngest(in, ds, urlCheck);
+            // Stream-sanitize by removing BOMs and any lines starting with an XML declaration, then wrap in a single synthetic root.
+            java.nio.file.Path sanitizedFile = java.nio.file.Files.createTempFile("epg-sanitized-", ".xml");
+            long lines = 0L;
+            long droppedXmlDecl = 0L;
+            try (java.io.BufferedReader reader = java.nio.file.Files.newBufferedReader(tmp, StandardCharsets.UTF_8);
+                 java.io.BufferedWriter writer = java.nio.file.Files.newBufferedWriter(sanitizedFile, StandardCharsets.UTF_8)) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    lines++;
+                    String noBom = line.replace("\uFEFF", "");
+                    String trimmed = noBom.stripLeading();
+                    if (trimmed.startsWith("<?xml")) {
+                        droppedXmlDecl++;
+                        continue; // drop XML declarations found mid-stream
+                    }
+                    writer.write(noBom);
+                    writer.newLine();
+                }
+            }
+            try {
+                long rawSize = java.nio.file.Files.size(tmp);
+                long sanitizedSize = java.nio.file.Files.size(sanitizedFile);
+                logger.debug("🧽 Sanitized XML: lines={}, droppedDecls={}, rawSize={} bytes, sanitizedSize={} bytes", lines, droppedXmlDecl, rawSize, sanitizedSize);
+            } catch (Exception ignore) {}
+            byte[] prefix = "<root>".getBytes(StandardCharsets.UTF_8);
+            byte[] suffix = "</root>".getBytes(StandardCharsets.UTF_8);
+            try (java.io.InputStream original = java.nio.file.Files.newInputStream(sanitizedFile);
+                 java.io.InputStream wrapped = new java.io.SequenceInputStream(
+                         new java.io.ByteArrayInputStream(prefix),
+                         new java.io.SequenceInputStream(original, new java.io.ByteArrayInputStream(suffix)))) {
+                streamIngest(wrapped, ds, urlCheck);
                 logger.info("✅ Completed EPG ingest for {}", requestUri);
             } finally {
                 try { java.nio.file.Files.deleteIfExists(tmp); } catch (Exception ignore) {}
+                try { java.nio.file.Files.deleteIfExists(sanitizedFile); } catch (Exception ignore) {}
             }
         } catch(InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -121,6 +145,10 @@ public class EPGService extends IngestService {
             String tvGenUrl;
             Map<String, ChannelEntity> channelCache = new HashMap<>();
             int chCreated = 0, chUpdated = 0, progCreated = 0, progUpdated = 0;
+
+            long startedNs = System.nanoTime();
+            int chSeen = 0, progSeen = 0;
+            logger.debug("📥 streamIngest start: ds={}, urlCheck={} {}ms", ds.getId(), urlCheck.status(), urlCheck.responseTimeMillis());
 
             while (r.hasNext()) {
                 int ev = r.next();
@@ -146,6 +174,7 @@ public class EPGService extends IngestService {
                     ;
                     tvEntity = tvRepository.save(tvEntity);
                 } else if ("channel".equals(name)) {
+                    chSeen++;
                     if (tvEntity == null) continue; // safeguard
                     String channelId = attr(r, "id");
                     String displayName = null;
@@ -244,7 +273,12 @@ public class EPGService extends IngestService {
                         chUpdated++;
                     }
                     channelCache.put(channelId, chEntity);
+                    if (chSeen % 50 == 0) {
+                        long ms = (System.nanoTime() - startedNs) / 1_000_000;
+                        logger.debug("📊 Channels seen={}, created={}, updated={}, elapsed={}ms", chSeen, chCreated, chUpdated, ms);
+                    }
                 } else if ("programme".equals(name)) {
+                    progSeen++;
                     String start = attr(r, "start");
                     String stop  = attr(r, "stop");
                     String chRef = attr(r, "channel");
@@ -395,11 +429,17 @@ public class EPGService extends IngestService {
                         programmeRepository.save(ProgrammeEntity.of(chEntity, pDto));
                         progCreated++;
                     }
+                    if (progSeen % 1000 == 0) {
+                        long ms = (System.nanoTime() - startedNs) / 1_000_000;
+                        logger.debug("📈 Programmes seen={}, created={}, updated={}, elapsed={}ms", progSeen, progCreated, progUpdated, ms);
+                    }
                 }
             }
-            logger.info("📦 EPG ingest summary: channels created={}, updated={}, programmes created={}, updated={}",
-                    chCreated, chUpdated, progCreated, progUpdated);
+            long totalMs = (System.nanoTime() - startedNs) / 1_000_000;
+            logger.info("📦 EPG ingest summary: channels seen={} (created={}, updated={}), programmes seen={} (created={}, updated={}), took={}ms",
+                    chSeen, chCreated, chUpdated, progSeen, progCreated, progUpdated, totalMs);
         } catch (XMLStreamException e) {
+            logger.error("📉 Failed to parse EPG stream (partial): {}", e.getMessage());
             throw new IllegalStateException("📉 Failed to parse EPG stream", e);
         } finally {
             if (r != null) try { r.close(); } catch (Exception ignored) {}
