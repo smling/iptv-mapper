@@ -241,6 +241,17 @@
         </div>
         <div class="p-2">
             <video id="dockVideo" class="w-full aspect-video rounded" style="background:#000" controls autoplay muted playsinline crossorigin="anonymous"></video>
+            <!-- Current programme info -->
+            <div id="playerProg" class="mt-2 text-xs rounded border t-border p-2 hidden">
+                <div class="flex items-center justify-between gap-2">
+                    <div id="playerProgTitle" class="font-medium truncate">—</div>
+                    <div id="playerProgTime" class="t-muted whitespace-nowrap">—</div>
+                </div>
+                <div class="mt-1 h-1 rounded" style="background: var(--surface-weak)">
+                    <div id="playerProgProgress" class="h-1 rounded" style="background: var(--now); width:0%"></div>
+                </div>
+                <div id="playerProgDesc" class="mt-1 t-muted"></div>
+            </div>
             <div id="playerError" class="mt-2 text-xs hidden" style="color:#ef4444"></div>
         </div>
     </div>
@@ -281,6 +292,11 @@
     const playerTitle = document.getElementById('playerTitle');
     const playerError = document.getElementById('playerError');
     const closePlayer = document.getElementById('closePlayer');
+    const playerProg = document.getElementById('playerProg');
+    const playerProgTitle = document.getElementById('playerProgTitle');
+    const playerProgTime = document.getElementById('playerProgTime');
+    const playerProgProgress = document.getElementById('playerProgProgress');
+    const playerProgDesc = document.getElementById('playerProgDesc');
 
     const searchBox = document.getElementById('searchBox');
     const clearBtn  = document.getElementById('clearSearch');
@@ -297,6 +313,7 @@
 
     let hls = null;
     let selectedKey = null;
+    const channelProgrammes = new Map();
 
     /* Helpers */
     const safe = (v) => v == null ? '' : String(v);
@@ -339,7 +356,7 @@
     /* Data + render */
     async function loadChannelsPage(pageIdx){
       setStatus('⏳ Loading channels…');
-      const res = await fetch(`${API_BASE}${CH_API}?page=${pageIdx}&size=${size}&sort=displayName,asc`);
+      const res = await fetch(`${API_BASE}${CH_API}?page=${pageIdx}&size=${size}&sort=title,asc`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       totalPages    = data.totalPages ?? totalPages;
@@ -349,6 +366,7 @@
     }
 
     function renderProgrammeRow(container, channel, programmes){
+      try { channelProgrammes.set(channel.channelId, programmes || []); } catch(_){}
       const startTs = gridStart.getTime();
       const endTs   = gridEnd.getTime();
 
@@ -366,9 +384,9 @@
                     class="h-8 w-8 rounded object-cover" style="outline:1px solid var(--border)"
                     onerror="this.style.display='none'">`
             : `<div class="h-8 w-8 rounded flex items-center justify-center text-[10px]"
-                 style="background:#cbd5e1;color:#334155">${safe(channel.displayName||'?').slice(0,2)}</div>`
+                 style="background:#cbd5e1;color:#334155">${safe(channel.title||'?').slice(0,2)}</div>`
           }
-          <div class="text-xs font-medium truncate">${safe(channel.displayName)}</div>
+          <div class="text-xs font-medium truncate">${safe(channel.title)}</div>
         </div>
         <div class="relative flex-1 overflow-hidden" style="height: var(--row-h)"></div>`;
 
@@ -399,6 +417,52 @@
       toggle.addEventListener('change', () => onTogglePlay(row));
 
       container.appendChild(row);
+    }
+
+    function findCurrentProgramme(list){
+      if (!Array.isArray(list) || list.length === 0) return null;
+      const now = Date.now();
+      for (const p of list) {
+        const s = Date.parse(p.startTime);
+        const e = Date.parse(p.stopTime);
+        if (!isFinite(s) || !isFinite(e)) continue;
+        if (s <= now && now < e) return p;
+      }
+      return null;
+    }
+
+    async function updatePlayerProgramme(fetchIfMissing=true){
+      if (!selectedKey) { playerProg?.classList.add('hidden'); return; }
+      let list = channelProgrammes.get(selectedKey) || null;
+      if ((!list || list.length === 0) && fetchIfMissing) {
+        try {
+          const res = await fetch(`${API_BASE}${PRG_API(selectedKey)}`);
+          if (res.ok) {
+            const data = await res.json();
+            list = data.content || [];
+            channelProgrammes.set(selectedKey, list);
+          }
+        } catch(_){}
+      }
+      const cur = findCurrentProgramme(list||[]);
+      if (!cur) {
+        playerProgTitle.textContent = 'No current programme';
+        playerProgTime.textContent = '';
+        playerProgDesc.textContent = '';
+        playerProgProgress.style.width = '0%';
+        playerProg.classList.remove('hidden');
+        return;
+      }
+      const s = Date.parse(cur.startTime);
+      const e = Date.parse(cur.stopTime);
+      const now = Date.now();
+      const pct = Math.max(0, Math.min(1, (now - s) / Math.max(1, (e - s)))) * 100;
+      const titleText = cur.m3uItemTitle ? `${safe(cur.m3uItemTitle)} · ${safe(cur.title||'')}` : `${safe(cur.title||'')}`;
+      playerProgTitle.textContent = titleText || '—';
+      playerProgTime.textContent = `${fmtTime(cur.startTime)}–${fmtTime(cur.stopTime)}`;
+      playerProgDesc.textContent = safe(cur.description||'');
+      playerProgProgress.style.width = pct.toFixed(1) + '%';
+      playerProg.classList.remove('hidden');
     }
 
     function renderNowLine(){
@@ -466,6 +530,13 @@
       } catch (_) {}
       playerError.classList.add('hidden');
       playerDock.classList.add('hidden');
+      if (playerProg) {
+        playerProg.classList.add('hidden');
+        playerProgTitle.textContent = '—';
+        playerProgTime.textContent = '';
+        playerProgDesc.textContent = '';
+        playerProgProgress.style.width = '0%';
+      }
       selectedKey = null;
       document.querySelectorAll('.epg-row .play-toggle:checked').forEach(cb => cb.checked = false);
     }
@@ -473,6 +544,7 @@
       playerTitle.textContent = `Now Playing: ${name}`;
       playerError.classList.add('hidden');
       playerDock.classList.remove('hidden');
+      updatePlayerProgramme();
 
       if (!url) {
         playerError.textContent = 'No stream URL provided.'; playerError.classList.remove('hidden'); return;
@@ -564,7 +636,7 @@
     searchBox.addEventListener('input', filterChannels);
     clearBtn.addEventListener('click', () => { searchBox.value=''; filterChannels(); searchBox.focus(); });
 
-    setInterval(() => renderNowLine(), 60_000);
+    setInterval(() => { renderNowLine(); if (selectedKey) updatePlayerProgramme(false); }, 60_000);
     initGridAndHeader();
     loadNextPage();
 </script>
