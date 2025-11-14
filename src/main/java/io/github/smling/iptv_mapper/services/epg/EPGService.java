@@ -279,6 +279,10 @@ public class EPGService extends IngestService {
                     }
                 } else if ("programme".equals(name)) {
                     progSeen++;
+                    if (progSeen % 1000 == 0) {
+                        long ms = (System.nanoTime() - startedNs) / 1_000_000;
+                        logger.debug("📊 EPG programme screening: seen={}, created={}, updated={}, elapsed={}ms", progSeen, progCreated, progUpdated, ms);
+                    }
                     String start = attr(r, "start");
                     String stop  = attr(r, "stop");
                     String chRef = attr(r, "channel");
