@@ -1,0 +1,17 @@
+{
+  "name": "iptv-mapper",
+  "description": "Memory bank for IPTV mapper (EPG, M3U, fuzzy matching, UI).",
+  "include": [
+    "src/main/java/io/github/smling/iptv_mapper/**",
+    "src/main/resources/static/**",
+    "scripts/**",
+    "AGENTS.md",
+    "README.md",
+    ".git/**"
+  ],
+  "exclude": [
+    "build/**",
+    "out/**",
+    ".gradle/**"
+  ]
+}
