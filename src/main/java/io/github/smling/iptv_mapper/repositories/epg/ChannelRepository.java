@@ -38,7 +38,7 @@ public interface ChannelRepository extends JpaRepository<ChannelEntity, String> 
 
     @Query(value = """
         SELECT c.id          AS channelDbId,
-               map.id        AS xmltvId,
+               c.channel_id  AS xmltvId,
                m3uItem.title AS displayName
           FROM m3u_item_channel_map map
           JOIN channel c ON c.id = map.channel_id

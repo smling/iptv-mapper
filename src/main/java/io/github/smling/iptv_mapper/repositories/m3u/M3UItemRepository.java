@@ -40,7 +40,7 @@ public interface M3UItemRepository extends JpaRepository<M3UItemEntity, UUID> {
            m.id 						 as tvgChno,
            mi.title                      AS channelName,
            mi.tvg_name 			         AS tvgName,
-           mi.tvg_name                   AS tvgId,        -- adjust if you store tvg_id
+           c.channel_id                  AS tvgId,
            mi.tvg_logo                   AS tvgLogo,
            mi.url                        AS streamUrl
         FROM m3u_item_channel_map m
