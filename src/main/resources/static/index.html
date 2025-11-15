@@ -318,6 +318,14 @@
     /* Helpers */
     const safe = (v) => v == null ? '' : String(v);
     const fmtTime = (t) => new Date(t).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
+    const formatConfidence = (channel) => {
+      const manual = Boolean(channel.manual);
+      if (manual) return 'manual';
+      const raw = channel.confidence;
+      const num = typeof raw === 'number' ? raw : Number(raw ?? 0);
+      if (!Number.isFinite(num) || num <= 0) return '-';
+      return `${(num * 100).toFixed(1)}%`;
+    };
     const alignHourUTC = (d) => { const x = new Date(d); x.setUTCMinutes(0,0,0); return x; };
     const totalWidthPx = () => (hoursSpan * 60 * PIXELS_PER_MIN);
     function setStatus(msg){ statusEl.textContent = msg; }
@@ -375,6 +383,7 @@
       row.dataset.channelId = channel.channelId || '';
       row.dataset.url = channel.url || '';
       row.dataset.name = channel.displayName || channel.title || 'Unknown';
+      row.dataset.itemId = channel.itemId || '';
 
       row.innerHTML = `
         <div class="channel-cell">
@@ -386,7 +395,15 @@
             : `<div class="h-8 w-8 rounded flex items-center justify-center text-[10px]"
                  style="background:#cbd5e1;color:#334155">${safe(channel.title||'?').slice(0,2)}</div>`
           }
-          <div class="text-xs font-medium truncate">${safe(channel.title)}</div>
+          <div class="flex flex-col min-w-0">
+            <div class="text-xs font-medium truncate">${safe(channel.title)}</div>
+            <div class="mt-0.5 flex items-center gap-1 text-[10px] t-muted">
+              <span class="truncate max-w-[7rem]">${safe(channel.displayName || channel.title || '')}</span>
+              <span class="px-1 rounded border t-border mapping-confidence">${formatConfidence(channel)}</span>
+              <span class="px-1 rounded border t-border mapping-type">${channel.manual ? 'manual' : 'auto'}</span>
+              <button type="button" class="edit-mapping px-1 py-0.5 rounded border t-border">✏️</button>
+            </div>
+          </div>
         </div>
         <div class="relative flex-1 overflow-hidden" style="height: var(--row-h)"></div>`;
 
@@ -415,6 +432,11 @@
 
       const toggle = row.querySelector('.play-toggle');
       toggle.addEventListener('change', () => onTogglePlay(row));
+
+      const editBtn = row.querySelector('.edit-mapping');
+      if (editBtn) {
+        editBtn.addEventListener('click', () => openManualMappingDialog(channel, row));
+      }
 
       container.appendChild(row);
     }
@@ -473,6 +495,61 @@
       const x = offsetMin * PIXELS_PER_MIN;
       nowLine.style.left = x + 'px';
       nowLine.style.display = (nowTs < startTs || nowTs > endTs) ? 'none' : 'block';
+    }
+
+    async function openManualMappingDialog(channel, row){
+      const itemId = row.dataset.itemId || channel.itemId;
+      if (!itemId) {
+        alert('No M3U item id found for this mapping.');
+        return;
+      }
+      try {
+        setStatus('? Loading channels for manual mapping.');
+        const res = await fetch(`${API_BASE}${CH_API}?page=0&size=500&sort=displayName,asc`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const items = (data.content || []).filter(c => !!c.channelId);
+        if (!items.length) {
+          alert('No channels available to map.');
+          setStatus('');
+          return;
+        }
+        const listText = items.map((c, idx) => `${idx}: ${safe(c.displayName || c.title || '')}`).join('\\n');
+        const choice = window.prompt(
+          `Select channel for \"${safe(channel.title)}\"` +
+          `\\n\\n${listText}\\n\\nEnter index (or cancel):`
+        );
+        if (choice == null) { setStatus(''); return; }
+        const idx = Number.parseInt(choice, 10);
+        if (!Number.isFinite(idx) || idx < 0 || idx >= items.length) {
+          alert('Invalid index.');
+          setStatus('');
+          return;
+        }
+        const chosen = items[idx];
+        const body = {
+          itemId,
+          channelId: chosen.channelId,
+          note: 'ui-manual'
+        };
+        const resp = await fetch(`${API_BASE}/api/v1/m3u/mappings/manual`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        if (!resp.ok && resp.status !== 204) {
+          throw new Error(`HTTP ${resp.status}`);
+        }
+        channel.manual = true;
+        const typeEl = row.querySelector('.mapping-type');
+        const confEl = row.querySelector('.mapping-confidence');
+        if (typeEl) typeEl.textContent = 'manual';
+        if (confEl) confEl.textContent = formatConfidence(channel);
+        setStatus('✅ Mapping updated (manual).');
+      } catch (e) {
+        console.error(e);
+        setStatus('❌ Failed to update mapping.');
+      }
     }
 
     async function initGridAndHeader(){

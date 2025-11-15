@@ -1,0 +1,9 @@
+{
+  "name": "epg",
+  "description": "EPG ingestion and service logic.",
+  "include": [
+    "src/main/java/io/github/smling/iptv_mapper/services/epg/**",
+    "src/main/java/io/github/smling/iptv_mapper/repositories/epg/**",
+    "src/main/java/io/github/smling/iptv_mapper/models/dto/epg/**"
+  ]
+}

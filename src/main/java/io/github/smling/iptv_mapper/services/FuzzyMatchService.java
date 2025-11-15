@@ -14,6 +14,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
+import java.util.UUID;
 import java.util.List;
 
 @Service
@@ -117,5 +118,14 @@ public class FuzzyMatchService {
             repo.delete(map);
         }
         repo.save(M3UItemChannelMapEntity.ofManual(item, channel, note, clock));
+    }
+
+    @Transactional
+    public void setManualMapping(UUID itemId, UUID channelId, String note) {
+        M3UItemEntity item = itemRepository.findById(itemId)
+                .orElseThrow(() -> new IllegalArgumentException("M3U item not found: " + itemId));
+        ChannelEntity channel = channelRepository.findById(channelId.toString())
+                .orElseThrow(() -> new IllegalArgumentException("Channel not found: " + channelId));
+        setManualMapping(item, channel, note);
     }
 }

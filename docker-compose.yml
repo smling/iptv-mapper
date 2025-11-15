@@ -41,7 +41,7 @@ services:
       # OpenTelemetry settings
       OTEL_SERVICE_NAME: iptv-mapper
       OTEL_RESOURCE_ATTRIBUTES: deployment.environment=prod
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://loki:4317
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://home-monitoring-sr01:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       # Optional: override to pin agent version
       # OTEL_JAVA_AGENT_URL: https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/download/v2.8.0/opentelemetry-javaagent.jar
@@ -64,15 +64,53 @@ services:
       timeout: 5s
       retries: 5
       start_period: 45s
-    logging:
-      driver: loki
-      options:
-        loki-url: "http://loki:3100/loki/api/v1/push"
-        mode: non-blocking
-        max-buffer-size: 4m
-        loki-external-labels: "job=iptv-mapper,container={{.Name}},compose_service={{.Service}}"
+
+  promtail:
+    image: grafana/promtail:2.9.2
+    container_name: promtail
+    restart: unless-stopped
+    depends_on:
+      - app
+    entrypoint: ["/bin/sh","-lc"]
+    command:
+      - |
+        printf "%s" "$PROMTAIL_CONFIG" > /etc/promtail/config.yml && \
+        exec /usr/bin/promtail -config.file=/etc/promtail/config.yml -client.url=$LOKI_URL
+    environment:
+      LOKI_URL: http://home-monitoring-sr01:3100/loki/api/v1/push
+      PROMTAIL_CONFIG: |
+        server:
+          http_listen_port: 9080
+          grpc_listen_port: 0
+        positions:
+          filename: /positions/positions.yaml
+        scrape_configs:
+          - job_name: docker
+            docker_sd_configs:
+              - host: unix:///var/run/docker.sock
+                refresh_interval: 5s
+                filters:
+                  - name: name
+                    values: [iptv-mapper]
+            relabel_configs:
+              - source_labels: ['__meta_docker_container_name']
+                target_label: 'container'
+              - source_labels: ['__meta_docker_container_label_com_docker_compose_service']
+                target_label: 'compose_service'
+              - source_labels: ['__meta_docker_container_log_stream']
+                target_label: 'stream'
+              - source_labels: ['__meta_docker_container_log_path']
+                target_label: '__path__'
+            pipeline_stages:
+              - docker: {}
+              - static_labels:
+                  job: iptv-mapper
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - promtail-positions:/positions
 
 volumes:
   pgdata:
   otelcache:
-
+  promtail-positions:
