@@ -78,15 +78,14 @@ class M3UServiceTest {
             }
         };
 
-        when(itemRepo.findPlaylistLinesAll()).thenReturn(List.of(row));
+        when(itemRepo.findPlaylistLinesAllMapped()).thenReturn(List.of(row));
         when(mapRepository.findAllProjected(org.mockito.ArgumentMatchers.any(Pageable.class)))
                 .thenReturn(Page.empty());
 
         // Act
-        String m3u = service.generateAll();
+        String m3u = service.generateAll(true);
 
         // Assert: EXTINF line should contain tvg-id equal to channelId
         assertTrue(m3u.contains("tvg-id=\"" + channelId + "\""), "M3U tvg-id should use channel.channel_id");
     }
 }
-

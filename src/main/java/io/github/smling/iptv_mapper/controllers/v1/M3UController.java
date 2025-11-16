@@ -34,10 +34,16 @@ public class M3UController {
         this.fuzzyMatchService = fuzzyMatchService;
     }
 
-    /** GET /api/v1/m3u  – returns full playlist (no filters, no url-tvg) */
+    /** GET /api/v1/m3u  - returns full playlist (no url-tvg).
+     *  Optional query parameter {@code isMapped=true} (default) limits
+     *  the playlist to items that are mapped to channels.
+     */
     @GetMapping
-    public ResponseEntity<String> full() {
-        String body = m3UService.generateAll();
+    public ResponseEntity<String> full(
+            @org.springframework.web.bind.annotation.RequestParam(name = "isMapped", required = false, defaultValue = "true")
+            boolean isMapped
+    ) {
+        String body = m3UService.generateAll(isMapped);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"playlist.m3u\"")
                 .contentType(M3U_MIME)
@@ -60,4 +66,3 @@ public class M3UController {
         }
     }
 }
-

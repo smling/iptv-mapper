@@ -48,6 +48,15 @@ public interface ChannelRepository extends JpaRepository<ChannelEntity, String> 
     List<io.github.smling.iptv_mapper.models.dto.epg.ChannelEpgRow> findAllChannelsForEpg();
 
     @Query(value = """
+        SELECT c.id           AS channelDbId,
+               c.channel_id   AS xmltvId,
+               c.display_name AS displayName
+          FROM channel c
+         ORDER BY c.display_name NULLS LAST, c.id
+        """, nativeQuery = true)
+    List<io.github.smling.iptv_mapper.models.dto.epg.ChannelEpgRow> findAllChannelsForEpgAll();
+
+    @Query(value = """
         SELECT
           c.id            AS channelDbId,
           c.channel_id    AS channelId,

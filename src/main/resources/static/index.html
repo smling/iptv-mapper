@@ -244,8 +244,8 @@
             <!-- Current programme info -->
             <div id="playerProg" class="mt-2 text-xs rounded border t-border p-2 hidden">
                 <div class="flex items-center justify-between gap-2">
-                    <div id="playerProgTitle" class="font-medium truncate">—</div>
-                    <div id="playerProgTime" class="t-muted whitespace-nowrap">—</div>
+                    <div id="playerProgTitle" class="font-medium truncate">-</div>
+                    <div id="playerProgTime" class="t-muted whitespace-nowrap">-</div>
                 </div>
                 <div class="mt-1 h-1 rounded" style="background: var(--surface-weak)">
                     <div id="playerProgProgress" class="h-1 rounded" style="background: var(--now); width:0%"></div>
@@ -253,6 +253,37 @@
                 <div id="playerProgDesc" class="mt-1 t-muted"></div>
             </div>
             <div id="playerError" class="mt-2 text-xs hidden" style="color:#ef4444"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Channel detail modal -->
+<div id="channelModal" class="fixed inset-0 z-40 hidden items-center justify-center bg-black/60">
+    <div class="t-surface rounded-lg shadow-xl max-w-2xl w-full mx-4 border t-border">
+        <div class="flex items-center justify-between px-4 py-3 border-b t-border">
+            <div class="flex flex-col">
+                <h2 class="text-sm font-semibold" id="channelModalTitle">Channel details</h2>
+                <p class="text-[11px] t-muted" id="channelModalSubtitle"></p>
+            </div>
+            <button type="button" id="channelModalClose"
+                    class="text-xs px-2 py-1 rounded border t-border hover:bg-slate-700/40">
+                Close
+            </button>
+        </div>
+        <div class="px-4 py-3 text-xs space-y-3">
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <h3 class="font-semibold mb-1">Mapped channel</h3>
+                    <dl class="space-y-0.5" id="channelModalChannel"></dl>
+                </div>
+                <div>
+                    <h3 class="font-semibold mb-1">M3U item</h3>
+                    <dl class="space-y-0.5" id="channelModalM3u"></dl>
+                </div>
+            </div>
+            <div id="channelModalUnmapped" class="hidden text-[11px] text-amber-400">
+                No manual mapping; showing current auto mapping (if any).
+            </div>
         </div>
     </div>
 </div>
@@ -298,6 +329,14 @@
     const playerProgProgress = document.getElementById('playerProgProgress');
     const playerProgDesc = document.getElementById('playerProgDesc');
 
+    const channelModal = document.getElementById('channelModal');
+    const channelModalTitle = document.getElementById('channelModalTitle');
+    const channelModalSubtitle = document.getElementById('channelModalSubtitle');
+    const channelModalChannel = document.getElementById('channelModalChannel');
+    const channelModalM3u = document.getElementById('channelModalM3u');
+    const channelModalUnmapped = document.getElementById('channelModalUnmapped');
+    const channelModalClose = document.getElementById('channelModalClose');
+
     const searchBox = document.getElementById('searchBox');
     const clearBtn  = document.getElementById('clearSearch');
 
@@ -314,6 +353,7 @@
     let hls = null;
     let selectedKey = null;
     const channelProgrammes = new Map();
+    const channelMeta = new Map();
 
     /* Helpers */
     const safe = (v) => v == null ? '' : String(v);
@@ -438,6 +478,28 @@
         editBtn.addEventListener('click', () => openManualMappingDialog(channel, row));
       }
 
+      // Cache meta for detail modal
+      channelMeta.set(row.dataset.channelId, {
+        channel,
+        m3u: {
+          title: channel.title,
+          url: channel.url,
+          tvgId: channel.tvId,
+          tvgLogo: channel.tvIconUrl
+        }
+      });
+
+      // Clicking the channel cell opens modal with details
+      const channelCell = row.querySelector('.channel-cell');
+      if (channelCell) {
+        channelCell.addEventListener('click', (e) => {
+          if (e.target && e.target.classList && e.target.classList.contains('play-toggle')) {
+            return;
+          }
+          openChannelModal(row.dataset.channelId);
+        });
+      }
+
       container.appendChild(row);
     }
 
@@ -495,6 +557,56 @@
       const x = offsetMin * PIXELS_PER_MIN;
       nowLine.style.left = x + 'px';
       nowLine.style.display = (nowTs < startTs || nowTs > endTs) ? 'none' : 'block';
+    }
+
+    function fmtDlRow(label, value) {
+      return `
+        <div class="flex gap-1">
+          <dt class="w-16 shrink-0 t-muted">${label}</dt>
+          <dd class="flex-1 truncate break-all">${safe(value)}</dd>
+        </div>`;
+    }
+
+    function openChannelModal(channelId) {
+      const meta = channelMeta.get(channelId);
+      if (!meta) return;
+      const { channel, m3u } = meta;
+
+      channelModalTitle.textContent = channel.title || channel.displayName || 'Channel details';
+      channelModalSubtitle.textContent = `Channel ID: ${channel.channelId || '-'} · Mapping: ${channel.manual ? 'manual' : 'auto'}`;
+
+      channelModalChannel.innerHTML = [
+        fmtDlRow('ID', channel.channelId),
+        fmtDlRow('Name', channel.displayName || channel.title),
+        fmtDlRow('TVG ID', channel.tvId),
+        fmtDlRow('Icon', channel.tvIconUrl)
+      ].join('');
+
+      channelModalM3u.innerHTML = [
+        fmtDlRow('Item ID', channel.itemId),
+        fmtDlRow('Title', m3u && m3u.title),
+        fmtDlRow('URL', m3u && m3u.url),
+        fmtDlRow('tvg-id', m3u && m3u.tvgId),
+        fmtDlRow('Logo', m3u && m3u.tvgLogo)
+      ].join('');
+
+      channelModalUnmapped.classList.toggle('hidden', Boolean(channel.manual));
+      channelModal.classList.remove('hidden');
+      channelModal.classList.add('flex');
+    }
+
+    function closeChannelModal() {
+      channelModal.classList.add('hidden');
+      channelModal.classList.remove('flex');
+    }
+
+    if (channelModalClose) {
+      channelModalClose.addEventListener('click', closeChannelModal);
+    }
+    if (channelModal) {
+      channelModal.addEventListener('click', (e) => {
+        if (e.target === channelModal) closeChannelModal();
+      });
     }
 
     async function openManualMappingDialog(channel, row){

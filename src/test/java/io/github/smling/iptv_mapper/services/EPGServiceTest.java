@@ -74,7 +74,10 @@ class EPGServiceTest {
         when(channelDisplayNameRepository.findByChannel_IdIn(List.of(channelDbId))).thenReturn(Collections.emptyList());
         when(channelUrlRepository.findByChannel_IdIn(List.of(channelDbId))).thenReturn(Collections.emptyList());
 
-        ChannelEntity ch = new ChannelEntity().setChannelId(channelId).setDisplayName("Test Channel");
+        ChannelEntity ch = new ChannelEntity()
+                .setId(channelDbId)
+                .setChannelId(channelId)
+                .setDisplayName("Test Channel");
         ProgrammeEntity prog = new ProgrammeEntity()
                 .setChannel(ch)
                 .setStartTime(OffsetDateTime.now())

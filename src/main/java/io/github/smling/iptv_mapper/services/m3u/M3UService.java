@@ -154,9 +154,14 @@ public class M3UService extends IngestService {
                 .toList();
     }
 
-    /** Build a full M3U with all mapped items. */
-    public String generateAll() {
-        List<M3UPlaylistLineView> rows = itemRepo.findPlaylistLinesAll();
+    /** Build a full M3U.
+     *  @param mappedOnly when {@code true}, only items that are mapped to channels are included.
+     *                    When {@code false}, both mapped and unmapped items are included.
+     */
+    public String generateAll(boolean mappedOnly) {
+        List<M3UPlaylistLineView> rows = mappedOnly
+                ? itemRepo.findPlaylistLinesAllMapped()
+                : itemRepo.findPlaylistLinesAll();
 
         StringBuilder sb = new StringBuilder(16_384);
         sb.append("#EXTM3U\n"); // no url-tvg
@@ -182,6 +187,11 @@ public class M3UService extends IngestService {
             seq++;
         }
         return sb.toString();
+    }
+
+    /** Backward-compatible helper for call sites that don't care about mapped filter. */
+    public String generateAll() {
+        return generateAll(true);
     }
 
     public Page<M3UItemChannelView> list(Pageable pageable) {

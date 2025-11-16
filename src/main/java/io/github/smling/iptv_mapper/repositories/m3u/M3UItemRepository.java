@@ -37,15 +37,33 @@ public interface M3UItemRepository extends JpaRepository<M3UItemEntity, UUID> {
 
     @Query(value = """
         SELECT
-           m.id 						 as tvgChno,
-           mi.title                      AS channelName,
-           mi.tvg_name 			         AS tvgName,
-           c.channel_id                  AS tvgId,
-           mi.tvg_logo                   AS tvgLogo,
-           mi.url                        AS streamUrl
+           m.id                           AS tvgChno,
+           mi.title                       AS channelName,
+           mi.tvg_name                    AS tvgName,
+           c.channel_id                   AS tvgId,
+           mi.tvg_logo                    AS tvgLogo,
+           mi.url                         AS streamUrl
         FROM m3u_item_channel_map m
         JOIN m3u_item mi  ON mi.id = m.m3u_item_id
         JOIN channel c    ON c.id = m.channel_id
+        ORDER BY tvgName
+        """, nativeQuery = true)
+    List<M3UPlaylistLineView> findPlaylistLinesAllMapped();
+
+    @Query(value = """
+        SELECT
+           COALESCE(CAST(m.id AS text), CAST(mi.id AS text)) AS tvgChno,
+           mi.title                                         AS channelName,
+           COALESCE(mi.tvg_name, mi.title)                  AS tvgName,
+           CASE WHEN m.id IS NOT NULL
+                THEN c.channel_id
+                ELSE mi.tvg_id
+           END                                              AS tvgId,
+           mi.tvg_logo                                      AS tvgLogo,
+           mi.url                                           AS streamUrl
+        FROM m3u_item mi
+        LEFT JOIN m3u_item_channel_map m ON mi.id = m.m3u_item_id
+        LEFT JOIN channel c              ON c.id = m.channel_id
         ORDER BY tvgName
         """, nativeQuery = true)
     List<M3UPlaylistLineView> findPlaylistLinesAll();
