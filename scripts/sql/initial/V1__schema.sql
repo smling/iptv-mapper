@@ -446,8 +446,3 @@ ON CONFLICT DO NOTHING;
 INSERT INTO data_source(type, url, label, priority) VALUES
   ('M3U','https://iptv-org.github.io/iptv/index.m3u','IPTV.org master playlist',50)
 ON CONFLICT DO NOTHING;
-
-update  data_source ds
-set enabled = false
-where ds.country_code not in ('AU', 'HK', 'JP', 'GB', 'US', 'TW')
-;
