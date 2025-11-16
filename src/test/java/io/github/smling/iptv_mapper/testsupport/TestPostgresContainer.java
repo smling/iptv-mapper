@@ -14,13 +14,12 @@ public class TestPostgresContainer extends PostgreSQLContainer<TestPostgresConta
         super(IMAGE);
     }
 
-    public static TestPostgresContainer getInstance() {
-        return INSTANCE;
-    }
-
     static {
         // Start exactly once per JVM before any tests access it
         INSTANCE.start();
     }
-}
 
+    public static TestPostgresContainer getInstance() {
+        return INSTANCE;
+    }
+}

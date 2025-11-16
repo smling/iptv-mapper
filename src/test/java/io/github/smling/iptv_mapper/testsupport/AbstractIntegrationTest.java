@@ -21,4 +21,3 @@ public abstract class AbstractIntegrationTest {
         registry.add("spring.flyway.baseline-on-migrate", () -> "true");
     }
 }
-

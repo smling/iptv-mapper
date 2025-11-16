@@ -23,12 +23,17 @@ public class EPGController {
         this.service = service;
     }
 
+    /** GET /api/v1/epg - Stream XMLTV.
+     *  Optional query parameter {@code isMapped=true} (default) limits
+     *  the EPG to channels/programmes that are mapped to M3U items.
+     */
     @GetMapping(produces = "application/xml; charset=UTF-8")
     public ResponseEntity<StreamingResponseBody> epg(
             @RequestParam(required = false) OffsetDateTime from,
-            @RequestParam(required = false) OffsetDateTime to
+            @RequestParam(required = false) OffsetDateTime to,
+            @RequestParam(name = "isMapped", required = false, defaultValue = "true") boolean isMapped
     ) {
-        StreamingResponseBody stream = out -> service.generateTo(out, from, to);
+        StreamingResponseBody stream = out -> service.generateTo(out, from, to, isMapped);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"epg.xml\"")
                 .contentType(MediaType.APPLICATION_XML)

@@ -708,12 +708,22 @@ public class EPGService extends IngestService {
         }
     }
 
-    public void generateTo(java.io.OutputStream out, OffsetDateTime from, OffsetDateTime to) {
+    /**
+     * Generate XMLTV and write to the provided stream.
+     * @param from start time (optional)
+     * @param to   end time (optional)
+     * @param mappedOnly when {@code true}, only channels/programmes that have mappings to M3U items are included.
+     *                   When {@code false}, all channels/programmes are exported.
+     */
+    public void generateTo(java.io.OutputStream out, OffsetDateTime from, OffsetDateTime to, boolean mappedOnly) {
         var nowUtc = OffsetDateTime.now(clock).withOffsetSameInstant(ZoneOffset.UTC);
         var start = (from == null ? nowUtc : from.withOffsetSameInstant(ZoneOffset.UTC));
         var end   = (to == null ? nowUtc.plusHours(24) : to.withOffsetSameInstant(ZoneOffset.UTC));
 
-        var rows = channelRepository.findAllChannelsForEpg();
+        var rows = mappedOnly
+                ? channelRepository.findAllChannelsForEpg()
+                : channelRepository.findAllChannelsForEpgAll();
+
         var channelIds = rows.stream().map(io.github.smling.iptv_mapper.models.dto.epg.ChannelEpgRow::getChannelDbId).toList();
         var names = channelDisplayNameRepository.findByChannel_IdIn(channelIds).stream().collect(java.util.stream.Collectors.groupingBy(e -> e.getChannel().getId()));
         var urls  = channelUrlRepository.findByChannel_IdIn(channelIds).stream().collect(java.util.stream.Collectors.groupingBy(e -> e.getChannel().getId()));
@@ -737,7 +747,15 @@ public class EPGService extends IngestService {
             return new io.github.smling.iptv_mapper.models.dto.epg.Channel(r.getXmltvId(), dnList, java.util.List.of(), urlList);
         }).toList();
 
-        var progs = programmeRepository.findEntitiesBetween(start, end).stream()
+        java.util.List<ProgrammeEntity> programmeEntities = programmeRepository.findEntitiesBetween(start, end);
+        if (mappedOnly) {
+            java.util.Set<java.util.UUID> allowed = new java.util.HashSet<>(channelIds);
+            programmeEntities = programmeEntities.stream()
+                    .filter(p -> p.getChannel() != null && allowed.contains(p.getChannel().getId()))
+                    .toList();
+        }
+
+        var progs = programmeEntities.stream()
                 .map(io.github.smling.iptv_mapper.models.dto.epg.Programme::fromEntity)
                 .toList();
 
@@ -757,6 +775,10 @@ public class EPGService extends IngestService {
         } catch (IOException e) {
             throw new IllegalStateException("Failed to stream XMLTV", e);
         }
+    }
+
+    public void generateTo(java.io.OutputStream out, OffsetDateTime from, OffsetDateTime to) {
+        generateTo(out, from, to, true);
     }
 
     private String getGeneratorInfoUrl() {
