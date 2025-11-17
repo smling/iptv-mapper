@@ -41,10 +41,10 @@ services:
       # OpenTelemetry settings
       OTEL_SERVICE_NAME: iptv-mapper
       OTEL_RESOURCE_ATTRIBUTES: deployment.environment=prod
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://home-monitoring-sr01:4317
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://loki:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       # Optional: override to pin agent version
-      # OTEL_JAVA_AGENT_URL: https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/download/v2.8.0/opentelemetry-javaagent.jar
+      # OTEL_JAVA_AGENT_URL: https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/download/v2.21.0/opentelemetry-javaagent.jar
     # For local environment.
     image: iptv-mapper:latest
     # For remote deployment.
