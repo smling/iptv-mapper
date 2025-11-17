@@ -3,6 +3,7 @@ plugins {
 	id 'org.springframework.boot' version '3.5.7'
 	id 'io.spring.dependency-management' version '1.1.7'
     id 'jacoco'
+    id 'me.champeau.jmh' version '0.7.2'
 }
 
 group = 'io.github.smling'
@@ -43,6 +44,9 @@ dependencies {
     testImplementation 'org.testcontainers:junit-jupiter'
     testImplementation 'org.testcontainers:postgresql'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+    jmh 'org.openjdk.jmh:jmh-core:1.37'
+    jmh 'org.openjdk.jmh:jmh-generator-annprocess:1.37'
 }
 
 test {
@@ -57,4 +61,13 @@ jacocoTestReport {
         xml.required = true
         html.required = true
     }
+}
+
+jmh {
+    // Keep CI runs fast; override locally if you want full runs.
+    warmupIterations.set(1)
+    iterations.set(1)
+    fork.set(1)
+    benchmarkMode.set(['thrpt'])
+    timeOnIteration.set('1s')
 }
