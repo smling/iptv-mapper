@@ -3,7 +3,6 @@ package io.github.smling.iptv_mapper.repositories.epg;
 import io.github.smling.iptv_mapper.models.dao.epg.ChannelEntity;
 import io.github.smling.iptv_mapper.models.dto.epg.ChannelLineView;
 import io.github.smling.iptv_mapper.models.dto.epg.ChannelProgrammeView;
-import io.github.smling.iptv_mapper.models.dto.m3u.M3UPlaylistLineView;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -42,7 +41,7 @@ public interface ChannelRepository extends JpaRepository<ChannelEntity, String> 
                m3uItem.title AS displayName
           FROM m3u_item_channel_map map
           JOIN channel c ON c.id = map.channel_id
-          JOIN m3u_item m3uItem on m3uItem.id = map.mcu_item_id
+          JOIN m3u_item m3uItem on m3uItem.id = map.m3u_item_id
          ORDER BY c.display_name NULLS LAST, c.id
         """, nativeQuery = true)
     List<io.github.smling.iptv_mapper.models.dto.epg.ChannelEpgRow> findAllChannelsForEpg();
